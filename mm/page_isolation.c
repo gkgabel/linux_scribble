@@ -15,6 +15,11 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/page_isolation.h>
 
+int get_page_order(struct page *page){
+        return buddy_order(page);
+}
+EXPORT_SYMBOL(get_page_order);
+
 /*
  * This function checks whether the range [start_pfn, end_pfn) includes
  * unmovable pages or not. The range must fall into a single pageblock and
@@ -30,7 +35,7 @@
  * cannot get removed (e.g., via memory unplug) concurrently.
  *
  */
-static struct page *has_unmovable_pages(unsigned long start_pfn, unsigned long end_pfn,
+struct page *has_unmovable_pages(unsigned long start_pfn, unsigned long end_pfn,
 				int migratetype, int flags)
 {
 	struct page *page = pfn_to_page(start_pfn);
@@ -138,6 +143,7 @@ static struct page *has_unmovable_pages(unsigned long start_pfn, unsigned long e
 	}
 	return NULL;
 }
+EXPORT_SYMBOL(has_unmovable_pages);
 
 /*
  * This function set pageblock migratetype to isolate if no unmovable page is

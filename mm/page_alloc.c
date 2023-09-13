@@ -582,6 +582,8 @@ unsigned long get_pfnblock_flags_mask(const struct page *page,
 {
 	return __get_pfnblock_flags_mask(page, pfn, mask);
 }
+EXPORT_SYMBOL(get_pfnblock_flags_mask);
+
 
 static __always_inline int get_pfnblock_migratetype(const struct page *page,
 					unsigned long pfn)
