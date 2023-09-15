@@ -45,7 +45,7 @@ struct zone *next_zone(struct zone *zone)
 	}
 	return zone;
 }
-
+EXPORT_SYMBOL(next_zone);
 static inline int zref_in_nodemask(struct zoneref *zref, nodemask_t *nodes)
 {
 #ifdef CONFIG_NUMA
