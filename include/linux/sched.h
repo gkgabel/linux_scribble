@@ -724,6 +724,33 @@ struct kmap_ctrl {
 #endif
 };
 
+// Define a struct for an edge
+struct Edge {
+    struct Node* dest_node;
+    char* edge_label;
+    struct Edge* next_edge;
+};
+
+// Define a struct for a node
+struct Node {
+    char* label;
+    struct Edge* edge_list;
+    struct Node* next_node;
+};
+
+// Define a struct for a frontier node
+struct FNode {
+    struct Node* node;
+    struct FNode* next;
+};
+
+// Define a struct for the graph
+struct PolicyGraph {
+    struct Node* start_node;
+    struct Node* node_list;
+    struct FNode* frontier;
+};
+
 struct task_struct {
 #ifdef CONFIG_THREAD_INFO_IN_TASK
 	/*
@@ -1107,6 +1134,7 @@ struct task_struct {
 	unsigned int			sessionid;
 #endif
 	struct seccomp			seccomp;
+	struct PolicyGraph		graph;
 	struct syscall_user_dispatch	syscall_dispatch;
 
 	/* Thread group tracking: */

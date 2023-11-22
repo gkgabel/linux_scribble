@@ -1188,6 +1188,8 @@ out:
 	return -1;
 }
 
+static void __seccomp_graph(int this_syscall);
+
 static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd,
 			    const bool recheck_after_trace)
 {
@@ -1330,21 +1332,24 @@ int __secure_computing(const struct seccomp_data *sd)
 	if (IS_ENABLED(CONFIG_CHECKPOINT_RESTORE) &&
 	    unlikely(current->ptrace & PT_SUSPEND_SECCOMP))
 		return 0;
-
+	
 	this_syscall = sd ? sd->nr :
 		syscall_get_nr(current, current_pt_regs());
 
 	switch (mode) {
-	case SECCOMP_MODE_STRICT:
+	case SECCOMP_MODE_STRICT: 
 		__secure_computing_strict(this_syscall);  /* may call do_exit */
 		return 0;
-	case SECCOMP_MODE_FILTER:
-		return __seccomp_filter(this_syscall, sd, false);
+	case SECCOMP_MODE_FILTER: 
+			return __seccomp_filter(this_syscall, sd, false);
 	/* Surviving SECCOMP_RET_KILL_* must be proactively impossible. */
 	case SECCOMP_MODE_DEAD:
 		WARN_ON_ONCE(1);
 		do_exit(SIGKILL);
 		return -1;
+	case SECCOMP_MODE_GRAPH:
+		__seccomp_graph(this_syscall);
+		return 0;
 	default:
 		BUG();
 	}
@@ -1450,6 +1455,7 @@ find_notification(struct seccomp_filter *filter, u64 id)
 	return NULL;
 }
 
+static long seccomp_set_mode_graph(const char __user * file_path);
 
 static long seccomp_notify_recv(struct seccomp_filter *filter,
 				void __user *buf)
@@ -1999,6 +2005,8 @@ static long do_seccomp(unsigned int op, unsigned int flags,
 			return -EINVAL;
 
 		return seccomp_get_notif_sizes(uargs);
+	case SECCOMP_SET_MODE_GRAPH:
+		return seccomp_set_mode_graph(uargs);
 	default:
 		return -EINVAL;
 	}
@@ -2462,3 +2470,284 @@ int proc_pid_seccomp_cache(struct seq_file *m, struct pid_namespace *ns,
 	return 0;
 }
 #endif /* CONFIG_SECCOMP_CACHE_DEBUG */
+
+
+// Function to create a new node
+struct Node* createNode(char* label)  {
+    struct Node* newNode = (struct Node*)kmalloc(sizeof(struct Node),GFP_KERNEL);
+	newNode->label = kmalloc(256,GFP_KERNEL);
+	strcpy(newNode->label,label);
+    newNode->edge_list = NULL;
+    newNode->next_node = NULL;
+    return newNode;
+}
+
+// Function to create a new edge
+struct Edge* createEdge(struct Node* dest_node, char* edge_label) {
+    struct Edge* newEdge = (struct Edge*)kmalloc(sizeof(struct Edge),GFP_KERNEL);
+	newEdge->dest_node = dest_node;
+	newEdge->edge_label = kmalloc(256,GFP_KERNEL);
+    newEdge->edge_label = strcpy(newEdge->edge_label,edge_label);
+    newEdge->next_edge = NULL;
+    return newEdge;
+}
+
+//Function to create a frontier node
+struct FNode* createFNode(struct Node* node){
+    struct FNode* fnode = (struct FNode*)kmalloc(sizeof(struct FNode),GFP_KERNEL);
+    fnode->node = node;
+    fnode->next = NULL;
+    return fnode;
+}
+
+// Function to add an edge to a node
+void addEdge(struct Node* src_node, struct Node* dest_node, char* edge_label) {
+    struct Edge* newEdge = createEdge(dest_node, edge_label);
+    newEdge->next_edge = src_node->edge_list;
+    src_node->edge_list = newEdge;
+}
+
+// Function to add a node to the graph
+void addNode(struct PolicyGraph* graph, char* label) {
+    struct Node* newNode = createNode(label);
+    newNode->next_node = graph->node_list;
+    graph->node_list = newNode;
+    if (graph->start_node == NULL) {
+		//add execve to start
+		struct Node* first_node = createNode("-1");
+        struct Node* second_node = createNode("0");
+		first_node->next_node = NULL;
+        second_node->next_node = first_node;
+		newNode->next_node = second_node;
+        graph->start_node = first_node;
+		addEdge(first_node,second_node,"59");
+        addEdge(second_node,newNode,"11");
+        graph->frontier = createFNode(first_node);
+    }
+}
+
+//Function to add a node to frontier list
+void addFNode(struct FNode** frontier, struct Node* node)
+{
+	struct FNode* newFNode = createFNode(node);
+    if(*frontier == NULL){
+        *frontier = createFNode(node);
+        return;
+    }
+    newFNode->next = (*frontier);
+    (*frontier) = newFNode;
+}
+
+//Function to free frontier nodes
+void freeFrontier(struct PolicyGraph* graph){
+    struct FNode* temp1 = graph->frontier;
+    struct FNode* temp2 = NULL;
+    while(temp1 != NULL ){
+        temp2 = temp1->next;
+        kfree(temp1);
+        temp1=temp2;
+    }
+    graph->frontier = NULL;
+}
+
+// Function to find a node by label in the graph; add if not found
+struct Node* findNode(struct Node* startNode, char* label, struct PolicyGraph* graph) {
+    struct Node* currentNode = graph->node_list ;
+    struct Node* foundNode = NULL;
+    // Search for the node
+    while (currentNode != NULL) {
+        if (strcmp(currentNode->label, label) == 0) {
+            foundNode = currentNode;
+            break;
+        }
+        currentNode = currentNode->next_node;
+    }
+    // If the node is not found, add it to the graph
+    if (foundNode == NULL) {
+        addNode(graph, label);
+        foundNode = graph->node_list;  
+        // The newly added node is now the first node in the list
+    }
+    return foundNode;
+}
+
+// Function to print the adjacency list representation of the graph
+void printGraph(struct PolicyGraph* graph) {
+    struct Node* current_node = graph->node_list;
+	struct Edge* current_edge;
+    while (current_node != NULL) {
+        printk("Node %s:", current_node->label);
+
+        current_edge = current_node->edge_list;
+        while (current_edge != NULL) {
+            printk(" -> %s(%s)", current_edge->dest_node->label, current_edge->edge_label);
+            current_edge = current_edge->next_edge;
+        }
+
+        current_node = current_node->next_node;
+    }
+}
+
+
+// Function to parse a .dot file and populate the graph
+void parseDotFile(const char *file_path, struct PolicyGraph* graph) {
+    struct file *file;
+    char* line;
+	char* buff;
+	char* tmp;
+	int count = 0;
+    // Open the file
+    file = filp_open(file_path, O_RDWR, 0);
+    if (IS_ERR(file)) {
+        return;
+    }
+	line = kmalloc(256, GFP_KERNEL);
+	buff = kmalloc(2, GFP_KERNEL);
+	for (int i =0; i<256;i++)line[i]='\0';
+    // Read each line from the file
+    while (kernel_read(file, buff, 1, &(file->f_pos)) > 0) {
+		struct Node* srcNode;
+		struct Node* destNode;
+		if(buff[0] != '\n')
+		{
+			line[count++] = buff[0];
+			continue;
+		}
+		line[count] = '\0';
+		count = 0;
+		tmp = line;
+		// Check if the line contains an edge definition
+        if (strstr(tmp, "->") != NULL) {
+            char *srcNodeLabel, *destNodeLabel, *edgeLabel;
+            // Extract source node, destination node, and edge label
+			while( *tmp != '\"')tmp++;
+			tmp++;
+			srcNodeLabel = tmp;
+			while(*tmp!='\"')tmp++;
+			*tmp = '\0';
+			tmp++;
+			while(*tmp!='\"')tmp++;
+			tmp++;
+			destNodeLabel = tmp;
+			while(*tmp!='\"')tmp++;
+			*tmp = '\0';
+			tmp++;
+			while(*tmp!='\"')tmp++;
+			tmp++;
+			while(*tmp!=' ')tmp++;
+			tmp++;
+			edgeLabel=tmp;
+			while(*tmp!='\"')tmp++;
+			*tmp = '\0';
+			tmp++;
+            // Find the source and destination nodes in the graph
+            srcNode = findNode(graph->start_node, srcNodeLabel, graph);
+            destNode = findNode(graph->start_node, destNodeLabel, graph);
+
+            // Add the edge to the graph
+            if (srcNode != NULL && destNode != NULL) {
+                addEdge(srcNode, destNode, edgeLabel);
+            }
+        }
+    }
+
+    // Close the file
+    filp_close(file, NULL);
+	kfree(line);
+	kfree(buff);
+	//printGraph(&(current->graph));
+
+}
+
+// Function to advance the frontier
+int advanceFrontier(struct PolicyGraph* graph,int transition) {
+    // Create a new frontier list for successors
+    struct FNode* newFrontier = NULL;
+    struct FNode* currentFrontierNode = graph->frontier;
+	int flag;
+	//return 1;
+	//exit_group syscall comes exit, don't check graph
+	if(transition == 231) return 1;
+    // Iterate through the current frontier
+	flag = 0;
+	
+	if(strcmp(currentFrontierNode->node->label,"0") == 0 && transition != 11) return 1;
+	/*{
+		if ( transition == 9 ) return 1; //-
+		if ( transition == 17 ) return 1; //-
+		if ( transition == 21 ) return 1; //-
+		if ( transition == 3 ) return 1; //-
+		if ( transition == 0 ) return 1; //-
+		if ( transition == 257 ) return 1; //-
+        if ( transition == 158 ) return 1; //-
+        if ( transition == 262 ) return 1; //-
+		if ( transition == 218 ) return 1; //-
+		if ( transition == 302 ) return 1; //-
+		if ( transition == 334 ) return 1; //-
+		if ( transition == 273 ) return 1; //set_robust_list
+	}
+	*/
+    while (currentFrontierNode != NULL) {
+        // Get the current node
+        struct Node* currentNode = currentFrontierNode->node;
+
+        // Iterate through the edges of the current node
+        struct Edge* currentEdge = currentNode->edge_list;
+        while (currentEdge != NULL) {
+            // Add the destination node of the edge to the new frontier
+			int temp;
+			kstrtoint(currentEdge->edge_label,10,&temp);
+			if( temp == transition)
+            {	
+				addFNode(&newFrontier, currentEdge->dest_node);
+				flag = 1;
+			}
+            currentEdge = currentEdge->next_edge;
+        }
+        // Move to the next node in the current frontier
+        currentFrontierNode = currentFrontierNode->next;
+    }
+
+    // Free the old frontier
+    freeFrontier(graph);
+
+    // Update the frontier with the new frontier
+    graph->frontier = newFrontier;
+	return flag;
+}
+
+// Function to print the frontier
+void printFrontier(struct PolicyGraph* graph) {
+    struct FNode* currentFrontierNode = graph->frontier;
+
+    while (currentFrontierNode != NULL) {
+        currentFrontierNode = currentFrontierNode->next;
+    }
+}
+
+static long seccomp_set_mode_graph(const char __user * file_path)
+{
+	struct filename* path = getname(file_path);
+	int seccomp_mode = SECCOMP_MODE_GRAPH;
+	//multiple times calling this will llead to memory leak because of graph 
+	current->graph.start_node = NULL;
+	current->graph.node_list = NULL;
+	current->graph.frontier = NULL;
+	parseDotFile(path->name,&(current->graph));
+	//spin_lock_irq(&current->sighand->siglock);
+	current->seccomp.mode = seccomp_mode;
+	set_task_syscall_work(current, SECCOMP);
+	//seccomp_assign_mode(current, seccomp_mode, 0);
+	//spin_unlock_irq(&current->sighand->siglock);
+	//printGraph(&(current->graph));
+	return 0;
+}
+
+static void __seccomp_graph(int this_syscall)
+{
+	if(advanceFrontier(&current->graph,this_syscall) == 0)
+	{
+		current->seccomp.mode = SECCOMP_MODE_DEAD;
+		do_exit(SIGKILL);
+	}
+}

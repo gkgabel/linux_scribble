@@ -10,13 +10,13 @@
 #define SECCOMP_MODE_DISABLED	0 /* seccomp is not in use. */
 #define SECCOMP_MODE_STRICT	1 /* uses hard-coded filter. */
 #define SECCOMP_MODE_FILTER	2 /* uses user-supplied filter. */
-
+#define SECCOMP_MODE_GRAPH 4/* uses user supplied policy as graph. Not using number 3 because already taken by SECCOMP_MODE_DEAD in seccomp.c */ 
 /* Valid operations for seccomp syscall. */
 #define SECCOMP_SET_MODE_STRICT		0
 #define SECCOMP_SET_MODE_FILTER		1
 #define SECCOMP_GET_ACTION_AVAIL	2
 #define SECCOMP_GET_NOTIF_SIZES		3
-
+#define SECCOMP_SET_MODE_GRAPH		4
 /* Valid flags for SECCOMP_SET_MODE_FILTER */
 #define SECCOMP_FILTER_FLAG_TSYNC		(1UL << 0)
 #define SECCOMP_FILTER_FLAG_LOG			(1UL << 1)
