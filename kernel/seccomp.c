@@ -2512,6 +2512,7 @@ void addNode(struct PolicyGraph* graph, char* label) {
     struct Node* newNode = createNode(label);
     newNode->next_node = graph->node_list;
     graph->node_list = newNode;
+	//Will never be wxecuted since already at initialization we add node for execve
     if (graph->start_node == NULL) {
 		//add execve to start
 		struct Node* first_node = createNode("-1");
@@ -2687,6 +2688,7 @@ int advanceFrontier(struct PolicyGraph* graph,int transition) {
 		if ( transition == 273 ) return 1; //set_robust_list
 	}
 	*/
+	printk("--%d\n",transition);
     while (currentFrontierNode != NULL) {
         // Get the current node
         struct Node* currentNode = currentFrontierNode->node;
@@ -2733,9 +2735,11 @@ static long seccomp_set_mode_graph(const char __user * file_path)
 	current->graph.start_node = NULL;
 	current->graph.node_list = NULL;
 	current->graph.frontier = NULL;
+	addNode(&(current->graph),"0_0");
 	parseDotFile(path->name,&(current->graph));
 	//spin_lock_irq(&current->sighand->siglock);
 	current->seccomp.mode = seccomp_mode;
+	printk("--modyyyyy %d-------%d--\n",current->seccomp.mode,seccomp_mode);
 	set_task_syscall_work(current, SECCOMP);
 	//seccomp_assign_mode(current, seccomp_mode, 0);
 	//spin_unlock_irq(&current->sighand->siglock);
