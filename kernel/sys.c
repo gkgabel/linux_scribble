@@ -2788,3 +2788,92 @@ COMPAT_SYSCALL_DEFINE1(sysinfo, struct compat_sysinfo __user *, info)
 	return 0;
 }
 #endif /* CONFIG_COMPAT */
+
+
+/*
+#include <../arch/x86/include/asm/tlbflush.h>
+#include <../mm/migrate.c>
+
+SYSCALL_DEFINE0(silent_migrate)
+{
+	struct mm_struct *mm;
+	struct vm_area_struct *vmi;
+	unsigned long vpage;
+	struct folio *src_folio;
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pte_t *pte, pte_access_unset, pte_new;
+	pmd_t *pmd;
+	pteval_t pte_flag;
+	int abort = 0;
+
+	mm=current->mm;
+
+	for(vmi = mm->mmap;vmi!=NULL;vmi=vmi->vm_next)
+	{
+		//Current implementation only takes in account the anonymous vma region
+		if(!vma_is_anonymous(vmi))
+			continue;
+
+		//Also skipping the stack pages currently
+		if(mm->start_stack >= vmi->vm_start && mm->start_stack <= vmi->vm_end)
+			continue;
+
+		//Iterate over base page size
+		for(vpage=vmi->vm_start;vpage<vmi->vm_end;vpage+=4096)
+		{
+			pgd = pgd_offset(mm, vpage);
+			if (pgd_none(*pgd) || pgd_bad(*pgd))
+				continue;
+		
+			p4d = p4d_offset(pgd, vpage);
+			if (p4d_none(*p4d) || p4d_bad(*p4d))
+				continue;
+			//printk("pud");
+			pud = pud_offset(p4d, vpage);
+			if (pud_none(*pud) || pud_bad(*pud))
+				continue;
+			//printk("pmd");
+			pmd = pmd_offset(pud, vpage);
+			if (pmd_none(*pmd) || pmd_bad(*pmd))
+				continue;
+			//printk("pte");
+			pte = pte_offset_map(pmd, vpage);
+			//printk("check if present");
+			if (!pte_present(*pte)) 
+				continue;
+			
+			struct page *src = pte_page(*pte);
+			struct page *dst = alloc_page(GFP_KERNEL);
+			unsigned long dest_pfn_val = page_to_pfn(dst);
+
+			pte_access_unset = pte_mkold(*pte); //should be same as __clear_bit(_PAGE_BIT_ACCESSED,*pte);
+
+			
+			//nOT DEALING WITH PHYSICAL PAGES SO BELOW PAGES ARE IRRELEVANT
+			//page_folio(src);
+			// folio_clear_referenced();
+
+			//Step 1: Unset Access Bit
+			//we want atomic unset of access bit so pte_mkold() won't work
+			// Position of access bit in PTE: _PAGE_BIT_ACCESSED = 5 
+			__clear_bit(_PAGE_BIT_ACCESSED,&pte->pte);
+			pte_flag = pte_flags(*pte);
+			pte_new.pte = pte_flag | (dest_pfn_val << PAGE_SHIFT);
+
+			//Step 2: Shootdown 
+			flush_tlb_page(vmi, vpage);
+
+			//Step 3: Copy 
+			folio_migrate_copy(page_folio(dst), page_folio(src));
+
+			//We need to copy the old PTE status bits to the new PTE 
+			//Step 4: Compare access bit and Xchange  PTE
+			if(cmpxchg(&pte->pte, pte_access_unset.pte, pte_new.pte)==pte->pte)//recheck this condition
+				abort++;
+		}
+	}
+	return 0;
+}
+*/

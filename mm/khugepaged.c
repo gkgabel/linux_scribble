@@ -376,6 +376,7 @@ int hugepage_madvise(struct vm_area_struct *vma,
 
 int __init khugepaged_init(void)
 {
+	//printk("khugepaged_init\n");
 	mm_slot_cache = kmem_cache_create("khugepaged_mm_slot",
 					  sizeof(struct mm_slot),
 					  __alignof__(struct mm_slot), 0, NULL);
@@ -2305,7 +2306,7 @@ static void khugepaged_wait_work(void)
 static int khugepaged(void *none)
 {
 	struct mm_slot *mm_slot;
-
+	printk("khugepaged\n");
 	set_freezable();
 	set_user_nice(current, MAX_NICE);
 
@@ -2377,7 +2378,7 @@ update_wmarks:
 int start_stop_khugepaged(void)
 {
 	int err = 0;
-
+	printk("start_stop_khugepaged\n");
 	mutex_lock(&khugepaged_mutex);
 	if (hugepage_flags_enabled()) {
 		if (!khugepaged_thread)

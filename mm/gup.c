@@ -24,6 +24,9 @@
 
 #include "internal.h"
 
+
+#include <linux/page_owner.h>
+
 struct follow_page_context {
 	struct dev_pagemap *pgmap;
 	unsigned int page_mask;
@@ -1160,7 +1163,17 @@ static long __get_user_pages(struct mm_struct *mm,
 	long ret = 0, i = 0;
 	struct vm_area_struct *vma = NULL;
 	struct follow_page_context ctx = { NULL };
+	/*
+	struct page_ext *page_ext;
+    struct page_owner *pg_owner;
+	    page_ext = lookup_page_ext(pages[i]);
+        if(page_ext == NULL)
+            continue;
 
+		pg_owner = (void *)page_ext + page_owner_ops.offset;
+        pg_owner->flag_gup = 1;
+	*/
+    //printk("__get_user_pages %lu\n",nr_pages);
 	if (!nr_pages)
 		return 0;
 
@@ -1284,6 +1297,36 @@ next_page:
 out:
 	if (ctx.pgmap)
 		put_dev_pagemap(ctx.pgmap);
+
+	if(!i)
+	{
+		for(int j=0;j<ret;j++)
+		{
+			struct page_ext *page_ext;
+    		struct page_owner *pg_owner;
+	    	page_ext = lookup_page_ext(pages[j]);
+        	if(page_ext != NULL)
+            {
+				pg_owner = (void *)page_ext + page_owner_ops.offset;
+        		pg_owner->flag_gup = 1;
+			}
+		}
+	}
+	else
+	{
+		for(int j=0;j<i;j++)
+		{
+			struct page_ext *page_ext;
+    		struct page_owner *pg_owner;
+	    	page_ext = lookup_page_ext(pages[j]);
+        	if(page_ext != NULL)
+            {
+				pg_owner = (void *)page_ext + page_owner_ops.offset;
+        		pg_owner->flag_gup = 1;
+			}
+		}
+	}
+
 	return i ? i : ret;
 }
 
@@ -1409,7 +1452,6 @@ static __always_inline long __get_user_pages_locked(struct mm_struct *mm,
 {
 	long ret, pages_done;
 	bool lock_dropped;
-
 	if (locked) {
 		/* if VM_FAULT_RETRY can be returned, vmas become invalid */
 		BUG_ON(vmas);

@@ -152,7 +152,7 @@ struct page_ext *lookup_page_ext(const struct page *page)
 					MAX_ORDER_NR_PAGES);
 	return get_entry(base, index);
 }
-
+EXPORT_SYMBOL(lookup_page_ext);
 static int __init alloc_node_page_ext(int nid)
 {
 	struct page_ext *base;
@@ -237,6 +237,7 @@ static void *__meminit alloc_page_ext(size_t size, int nid)
 
 	return addr;
 }
+EXPORT_SYMBOL(lookup_page_ext);
 
 static int __meminit init_section_page_ext(unsigned long pfn, int nid)
 {

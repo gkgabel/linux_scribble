@@ -21,18 +21,6 @@
  */
 #define PAGE_OWNER_STACK_DEPTH (16)
 
-struct page_owner {
-	unsigned short order;
-	short last_migrate_reason;
-	gfp_t gfp_mask;
-	depot_stack_handle_t handle;
-	depot_stack_handle_t free_handle;
-	u64 ts_nsec;
-	u64 free_ts_nsec;
-	char comm[TASK_COMM_LEN];
-	pid_t pid;
-	pid_t tgid;
-};
 
 static bool page_owner_enabled __initdata;
 DEFINE_STATIC_KEY_FALSE(page_owner_inited);
@@ -100,7 +88,7 @@ struct page_ext_operations page_owner_ops = {
 	.need = need_page_owner,
 	.init = init_page_owner,
 };
-
+EXPORT_SYMBOL(page_owner_ops);
 static inline struct page_owner *get_page_owner(struct page_ext *page_ext)
 {
 	return (void *)page_ext + page_owner_ops.offset;
@@ -175,7 +163,7 @@ static inline void __set_page_owner_handle(struct page_ext *page_ext,
 			sizeof(page_owner->comm));
 		__set_bit(PAGE_EXT_OWNER, &page_ext->flags);
 		__set_bit(PAGE_EXT_OWNER_ALLOCATED, &page_ext->flags);
-
+        page_owner->flag_gup = 0;
 		page_ext = page_ext_next(page_ext);
 	}
 }

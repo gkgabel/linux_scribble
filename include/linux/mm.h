@@ -30,6 +30,9 @@
 #include <linux/kasan.h>
 #include <linux/memremap.h>
 
+#include <linux/page_owner.h>
+#include <linux/page_ext.h>
+
 struct mempolicy;
 struct anon_vma;
 struct anon_vma_chain;
@@ -1167,7 +1170,16 @@ static inline void folios_put(struct folio **folios, unsigned int nr)
 static inline void put_page(struct page *page)
 {
 	struct folio *folio = page_folio(page);
-
+	
+	struct page_ext *page_ext;
+    struct page_owner *pg_owner;
+	page_ext = lookup_page_ext(page);
+    if(page_ext != NULL)
+	{	pg_owner = (void *)page_ext + page_owner_ops.offset;
+        if(pg_owner->flag_gup == 1)
+			pg_owner->flag_gup = 0;
+	}
+	
 	/*
 	 * For some devmap managed pages we need to catch refcount transition
 	 * from 2 to 1:

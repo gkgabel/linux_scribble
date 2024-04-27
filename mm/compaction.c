@@ -799,10 +799,12 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 	bool skip_on_failure = false;
 	unsigned long next_skip_pfn = 0;
 	bool skip_updated = false;
+	struct page_ext *page_ext;
+	struct page_owner *pg_owner;
 	int ret = 0;
 
 	cc->migrate_pfn = low_pfn;
-
+	//printk("isolate_migratepages_block\n");
 	/*
 	 * Ensure that there are not too many pages isolated from the LRU
 	 * list by either parallel reclaimers or compaction. If there are,
@@ -879,7 +881,12 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		nr_scanned++;
 
 		page = pfn_to_page(low_pfn);
+		
 
+		page_ext = lookup_page_ext(page);
+		pg_owner = (void *)page_ext + page_owner_ops.offset;;
+		if(pg_owner->flag_gup == 1)
+			;//printk(KERN_INFO "pfn = %lu ref_count = %d map_count = %d ",low_pfn,page_count(page),page_mapcount(page));
 		/*
 		 * Check if the pageblock has already been marked skipped.
 		 * Only the aligned PFN is checked as the caller isolates
@@ -896,6 +903,8 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		}
 
 		if (PageHuge(page) && cc->alloc_contig) {
+			if(pg_owner->flag_gup == 1)
+				;//printk(KERN_INFO "Cond: PageHuge(page) && cc->alloc_contig");
 			ret = isolate_or_dissolve_huge_page(page, &cc->migratepages);
 
 			/*
@@ -907,6 +916,8 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 				if (ret == -EBUSY)
 					ret = 0;
 				low_pfn += compound_nr(page) - 1;
+				if(pg_owner->flag_gup == 1)
+					;//printk(KERN_INFO "Cond: isolate_or_dissolve_huge_page() returned error");
 				goto isolate_fail;
 			}
 
@@ -916,6 +927,8 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 				 * on the cc->migratepages list.
 				 */
 				low_pfn += compound_nr(page) - 1;
+				if(pg_owner->flag_gup == 1)
+					;//printk(KERN_INFO "PageHuge(page)");
 				goto isolate_success_no_list;
 			}
 
@@ -935,7 +948,7 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		 */
 		if (PageBuddy(page)) {
 			unsigned long freepage_order = buddy_order_unsafe(page);
-
+            
 			/*
 			 * Without lock, we cannot be sure that what we got is
 			 * a valid page order. Consider only values in the
@@ -956,7 +969,8 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		 */
 		if (PageCompound(page) && !cc->alloc_contig) {
 			const unsigned int order = compound_order(page);
-
+			if(pg_owner->flag_gup == 1)
+					;//printk(KERN_INFO "PageCompound(page) && !cc->alloc_contig");
 			if (likely(order < MAX_ORDER))
 				low_pfn += (1UL << order) - 1;
 			goto isolate_fail;
@@ -972,6 +986,8 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 			 * __PageMovable can return false positive so we need
 			 * to verify it under page_lock.
 			 */
+			if(pg_owner->flag_gup == 1)
+					;//printk(KERN_INFO "!PageLRU(page)");
 			if (unlikely(__PageMovable(page)) &&
 					!PageIsolated(page)) {
 				if (locked) {
@@ -980,7 +996,10 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 				}
 
 				if (!isolate_movable_page(page, mode))
+				{	
+					//printk("!isolate_movable_page(page, mode)");
 					goto isolate_success;
+				}
 			}
 
 			goto isolate_fail;
@@ -992,17 +1011,31 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		 * page release code relies on it.
 		 */
 		if (unlikely(!get_page_unless_zero(page)))
+		{
+			if(pg_owner->flag_gup == 1)
+					;//printk(KERN_INFO "!get_page_unless_zero(page)");
 			goto isolate_fail;
-
+		}
 		/*
 		 * Migration will fail if an anonymous page is pinned in memory,
 		 * so avoid taking lru_lock and isolating it unnecessarily in an
 		 * admittedly racy check.
 		 */
 		mapping = page_mapping(page);
+		if(mapping && pg_owner->flag_gup == 1)
+		{
+			/*struct folio *folio=page_folio(page);
+			if (unlikely(folio_test_swapcache(folio)))
+				return swap_address_space(folio_swap_entry(folio));
+			*/
+			//printk(KERN_INFO "mapping exists and hence failing even though refcount > mapcount");
+		}
 		if (!mapping && (page_count(page) - 1) > total_mapcount(page))
+		{
+			if(pg_owner->flag_gup == 1)
+					;//printk(KERN_INFO "!mapping && (page_count(page) - 1) > total_mapcount(page)");
 			goto isolate_fail_put;
-
+		}
 		/*
 		 * Only allow to migrate anonymous pages in GFP_NOFS context
 		 * because those do not depend on fs locks.
@@ -1094,10 +1127,15 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		mod_node_page_state(page_pgdat(page),
 				NR_ISOLATED_ANON + page_is_file_lru(page),
 				thp_nr_pages(page));
-
+		//if(pg_owner->flag_gup == 1)
+		//	printk("No condition applies\n");
 isolate_success:
+		if(pg_owner->flag_gup == 1)
+			printk("PAGE IS GUPed but isolation_success");
 		list_add(&page->lru, &cc->migratepages);
 isolate_success_no_list:
+		//if(pg_owner->flag_gup == 1)
+		//	printk("PAGE IS GUPed but isolate_success_no_list");
 		cc->nr_migratepages += compound_nr(page);
 		nr_isolated += compound_nr(page);
 		nr_scanned += compound_nr(page) - 1;
@@ -1117,6 +1155,8 @@ isolate_success_no_list:
 		continue;
 
 isolate_fail_put:
+		//if(pg_owner->flag_gup == 1)
+			;//printk("PAGE IS GUPed but isolate_fail_put");
 		/* Avoid potential deadlock in freeing page under lru_lock */
 		if (locked) {
 			unlock_page_lruvec_irqrestore(locked, flags);
@@ -1125,6 +1165,8 @@ isolate_fail_put:
 		put_page(page);
 
 isolate_fail:
+		//if(pg_owner->flag_gup == 1)
+			;//printk("PAGE IS GUPed but isolate_fail");
 		if (!skip_on_failure && ret != -ENOMEM)
 			continue;
 
@@ -1166,6 +1208,8 @@ isolate_fail:
 	page = NULL;
 
 isolate_abort:
+	//if(pg_owner->flag_gup == 1)
+		;//printk("PAGE IS GUPed but isolate_abort");
 	if (locked)
 		unlock_page_lruvec_irqrestore(locked, flags);
 	if (page) {
@@ -1191,6 +1235,8 @@ isolate_abort:
 						nr_scanned, nr_isolated);
 
 fatal_pending:
+    //if(pg_owner->flag_gup == 1)
+	//	;//printk("PAGE IS GUPed but fatal_pending");
 	cc->total_migrate_scanned += nr_scanned;
 	if (nr_isolated)
 		count_compact_events(COMPACTISOLATED, nr_isolated);
@@ -1880,7 +1926,7 @@ static isolate_migrate_t isolate_migratepages(struct compact_control *cc)
 		(sysctl_compact_unevictable_allowed ? ISOLATE_UNEVICTABLE : 0) |
 		(cc->mode != MIGRATE_SYNC ? ISOLATE_ASYNC_MIGRATE : 0);
 	bool fast_find_block;
-
+	//printk("isolate_migratepages\n");
 	/*
 	 * Start at where we last stopped, or beginning of the zone as
 	 * initialized by compact_zone(). The first failure will use
@@ -2290,7 +2336,7 @@ compact_zone(struct compact_control *cc, struct capture_control *capc)
 	const bool sync = cc->mode != MIGRATE_ASYNC;
 	bool update_cached;
 	unsigned int nr_succeeded = 0;
-
+	//printk("compact_zone\n");
 	/*
 	 * These counters track activities during zone compaction.  Initialize
 	 * them before compacting a new zone.
@@ -2303,6 +2349,7 @@ compact_zone(struct compact_control *cc, struct capture_control *capc)
 	INIT_LIST_HEAD(&cc->migratepages);
 
 	cc->migratetype = gfp_migratetype(cc->gfp_mask);
+	//printk("Migrate Type\n");
 	ret = compaction_suitable(cc->zone, cc->order, cc->alloc_flags,
 							cc->highest_zoneidx);
 	/* Compaction is likely to fail */
@@ -2821,6 +2868,7 @@ static void kcompactd_do_work(pg_data_t *pgdat)
 		.ignore_skip_hint = false,
 		.gfp_mask = GFP_KERNEL,
 	};
+	//printk("kcompactd_do_work\n");
 	trace_mm_compaction_kcompactd_wake(pgdat->node_id, cc.order,
 							cc.highest_zoneidx);
 	count_compact_event(KCOMPACTD_WAKE);
@@ -2919,7 +2967,7 @@ static int kcompactd(void *p)
 	struct task_struct *tsk = current;
 	long default_timeout = msecs_to_jiffies(HPAGE_FRAG_CHECK_INTERVAL_MSEC);
 	long timeout = default_timeout;
-
+	//printk("kcompactd\n");
 	const struct cpumask *cpumask = cpumask_of_node(pgdat->node_id);
 
 	if (!cpumask_empty(cpumask))
@@ -2991,7 +3039,7 @@ static int kcompactd(void *p)
 void kcompactd_run(int nid)
 {
 	pg_data_t *pgdat = NODE_DATA(nid);
-
+	//printk("kcompactd_run\n");
 	if (pgdat->kcompactd)
 		return;
 
@@ -3044,7 +3092,7 @@ static int __init kcompactd_init(void)
 {
 	int nid;
 	int ret;
-
+	//printk("kcompactd_init\n");
 	ret = cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN,
 					"mm/compaction:online",
 					kcompactd_cpu_online, NULL);

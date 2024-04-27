@@ -257,7 +257,7 @@ static ssize_t enabled_store(struct kobject *kobj,
 			     const char *buf, size_t count)
 {
 	ssize_t ret = count;
-
+	printk("enabled_store\n");
 	if (sysfs_streq(buf, "always")) {
 		clear_bit(TRANSPARENT_HUGEPAGE_REQ_MADV_FLAG, &transparent_hugepage_flags);
 		set_bit(TRANSPARENT_HUGEPAGE_FLAG, &transparent_hugepage_flags);
@@ -458,7 +458,7 @@ static int __init hugepage_init(void)
 {
 	int err;
 	struct kobject *hugepage_kobj;
-
+	//printk("hugepage_init\n");
 	if (!has_transparent_hugepage()) {
 		/*
 		 * Hardware doesn't support hugepages, hence disable
