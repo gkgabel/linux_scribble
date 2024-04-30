@@ -7,7 +7,7 @@
 #define DEVICE_FILE "/dev/devnull"
 #define PAGE_SIZE 4096UL
 #define PAGES_PER_ALLOC 5
-#define NR_ALLOC 1024UL*1000UL
+#define NR_ALLOC 100 //24UL*1000UL
 int main() {
     int fd;
     ssize_t ret;

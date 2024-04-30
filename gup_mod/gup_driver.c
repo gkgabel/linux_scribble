@@ -69,14 +69,20 @@ static ssize_t my_write(struct file *f, const char __user *buf, size_t len,
 
         page_ext = lookup_page_ext(pages[i]);
         if(page_ext == NULL)
+        {
+            printk(KERN_INFO "page ext null");
             continue;
+        }
 		pg_owner = (void *)page_ext + page_owner_ops.offset;
         if(pg_owner->flag_gup != 1)
         {
             printk(KERN_INFO "not flagged. Check kernel");
         }
-        
-        pg_owner->flag_gup = 1;
+        else
+        {
+            printk(KERN_INFO "------");
+        }
+        //pg_owner->flag_gup = 1;
 
         if(page_mapping(pages[i]))
             temp++;
@@ -186,7 +192,7 @@ static int __init ofcd_init(void) /* Constructor */
 
     unsigned long gup_flagged = 0;
     gup_flagged = count_gup_flagged();
-    printk(KERN_INFO "gup flagged pfn(shpuld be zero ideally) %lu",gup_flagged);
+    printk(KERN_INFO "gup flagged pfn(shpuld be zero ideally) %lu \n",gup_flagged);
     return 0;
 }
 

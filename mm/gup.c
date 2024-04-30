@@ -1297,13 +1297,13 @@ next_page:
 out:
 	if (ctx.pgmap)
 		put_dev_pagemap(ctx.pgmap);
-
+	/*
+    struct page_ext *page_ext;
+    struct page_owner *pg_owner;
 	if(!i)
 	{
 		for(int j=0;j<ret;j++)
 		{
-			struct page_ext *page_ext;
-    		struct page_owner *pg_owner;
 	    	page_ext = lookup_page_ext(pages[j]);
         	if(page_ext != NULL)
             {
@@ -1316,8 +1316,6 @@ out:
 	{
 		for(int j=0;j<i;j++)
 		{
-			struct page_ext *page_ext;
-    		struct page_owner *pg_owner;
 	    	page_ext = lookup_page_ext(pages[j]);
         	if(page_ext != NULL)
             {
@@ -1326,6 +1324,7 @@ out:
 			}
 		}
 	}
+	*/
 
 	return i ? i : ret;
 }
@@ -1566,6 +1565,20 @@ retry:
 		mmap_read_unlock(mm);
 		*locked = 0;
 	}
+	/*
+	struct page_ext *page_ext;
+    struct page_owner *pg_owner;
+	printk(" __get_user_pages_locked");
+	for(long j=0;j<pages_done;j++)
+	{
+		page_ext = lookup_page_ext(pages[j]);
+    	if(page_ext != NULL)
+        {
+			pg_owner = (void *)page_ext + page_owner_ops.offset;
+    		pg_owner->flag_gup = 1;
+		}
+	}
+	*/
 	return pages_done;
 }
 
@@ -3026,7 +3039,9 @@ static int internal_get_user_pages_fast(unsigned long start,
 	unsigned long len, end;
 	unsigned long nr_pinned;
 	int ret;
-
+	struct page_ext *page_ext;
+    struct page_owner *pg_owner;
+	
 	if (WARN_ON_ONCE(gup_flags & ~(FOLL_WRITE | FOLL_LONGTERM |
 				       FOLL_FORCE | FOLL_PIN | FOLL_GET |
 				       FOLL_FAST_ONLY | FOLL_NOFAULT)))
@@ -3047,8 +3062,18 @@ static int internal_get_user_pages_fast(unsigned long start,
 
 	nr_pinned = lockless_pages_from_mm(start, end, gup_flags, pages);
 	if (nr_pinned == nr_pages || gup_flags & FOLL_FAST_ONLY)
+	{
+		for(long j=0;j<nr_pinned;j++)
+		{
+			page_ext = lookup_page_ext(pages[j]);
+    		if(page_ext != NULL)
+        	{
+				pg_owner = (void *)page_ext + page_owner_ops.offset;
+    			pg_owner->flag_gup = 1;
+			}
+		}
 		return nr_pinned;
-
+	}
 	/* Slow path: try to get the remaining pages with get_user_pages */
 	start += nr_pinned << PAGE_SHIFT;
 	pages += nr_pinned;
@@ -3060,8 +3085,37 @@ static int internal_get_user_pages_fast(unsigned long start,
 		 * returning -errno is not an option
 		 */
 		if (nr_pinned)
+		{
+			for(long j=0;j<nr_pinned;j++)
+			{
+				page_ext = lookup_page_ext(pages[j]);
+    			if(page_ext != NULL)
+        		{
+					pg_owner = (void *)page_ext + page_owner_ops.offset;
+    				pg_owner->flag_gup = 1;
+				}
+			}
 			return nr_pinned;
+		}
+		for(long j=0;j<ret;j++)
+		{
+			page_ext = lookup_page_ext(pages[j]);
+    		if(page_ext != NULL)
+        	{
+				pg_owner = (void *)page_ext + page_owner_ops.offset;
+    			pg_owner->flag_gup = 1;
+			}
+		}
 		return ret;
+	}
+	for(long j=0;j<ret + nr_pinned;j++)
+	{
+		page_ext = lookup_page_ext(pages[j]);
+		if(page_ext != NULL)
+    	{
+			pg_owner = (void *)page_ext + page_owner_ops.offset;
+			pg_owner->flag_gup = 1;
+		}
 	}
 	return ret + nr_pinned;
 }
