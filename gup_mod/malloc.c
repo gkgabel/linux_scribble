@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <unistd.h>
-#define MEMORY_SIZE 1024UL*1024UL*1024UL*18 // Define the size of memory to allocate
+#define MEMORY_SIZE 1024UL*1024UL*1024UL*15 // Define the size of memory to allocate
 
 void initializeMemory(void *ptr, size_t size, uint8_t value) {
     for (size_t i = 0; i < size; i++) {

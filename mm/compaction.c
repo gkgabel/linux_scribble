@@ -885,7 +885,7 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 
 		page_ext = lookup_page_ext(page);
 		pg_owner = (void *)page_ext + page_owner_ops.offset;;
-		if(pg_owner->flag_gup == 1)
+		if(pg_owner->flag_gup>0)
 			;//printk(KERN_INFO "pfn = %lu ref_count = %d map_count = %d ",low_pfn,page_count(page),page_mapcount(page));
 		/*
 		 * Check if the pageblock has already been marked skipped.
@@ -903,7 +903,7 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		}
 
 		if (PageHuge(page) && cc->alloc_contig) {
-			if(pg_owner->flag_gup == 1)
+			if(pg_owner->flag_gup>0)
 				;//printk(KERN_INFO "Cond: PageHuge(page) && cc->alloc_contig");
 			ret = isolate_or_dissolve_huge_page(page, &cc->migratepages);
 
@@ -916,7 +916,7 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 				if (ret == -EBUSY)
 					ret = 0;
 				low_pfn += compound_nr(page) - 1;
-				if(pg_owner->flag_gup == 1)
+				if(pg_owner->flag_gup>0)
 					;//printk(KERN_INFO "Cond: isolate_or_dissolve_huge_page() returned error");
 				goto isolate_fail;
 			}
@@ -927,7 +927,7 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 				 * on the cc->migratepages list.
 				 */
 				low_pfn += compound_nr(page) - 1;
-				if(pg_owner->flag_gup == 1)
+				if(pg_owner->flag_gup>0)
 					;//printk(KERN_INFO "PageHuge(page)");
 				goto isolate_success_no_list;
 			}
@@ -969,7 +969,7 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		 */
 		if (PageCompound(page) && !cc->alloc_contig) {
 			const unsigned int order = compound_order(page);
-			if(pg_owner->flag_gup == 1)
+			if(pg_owner->flag_gup>0)
 					;//printk(KERN_INFO "PageCompound(page) && !cc->alloc_contig");
 			if (likely(order < MAX_ORDER))
 				low_pfn += (1UL << order) - 1;
@@ -986,7 +986,7 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 			 * __PageMovable can return false positive so we need
 			 * to verify it under page_lock.
 			 */
-			if(pg_owner->flag_gup == 1)
+			if(pg_owner->flag_gup>0)
 					;//printk(KERN_INFO "!PageLRU(page)");
 			if (unlikely(__PageMovable(page)) &&
 					!PageIsolated(page)) {
@@ -1012,7 +1012,7 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		 */
 		if (unlikely(!get_page_unless_zero(page)))
 		{
-			if(pg_owner->flag_gup == 1)
+			if(pg_owner->flag_gup>0)
 					;//printk(KERN_INFO "!get_page_unless_zero(page)");
 			goto isolate_fail;
 		}
@@ -1022,7 +1022,7 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		 * admittedly racy check.
 		 */
 		mapping = page_mapping(page);
-		if(mapping && pg_owner->flag_gup == 1)
+		if(mapping && pg_owner->flag_gup>0)
 		{
 			/*struct folio *folio=page_folio(page);
 			if (unlikely(folio_test_swapcache(folio)))
@@ -1032,7 +1032,7 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		}
 		if (!mapping && (page_count(page) - 1) > total_mapcount(page))
 		{
-			if(pg_owner->flag_gup == 1)
+			if(pg_owner->flag_gup>0)
 					;//printk(KERN_INFO "!mapping && (page_count(page) - 1) > total_mapcount(page)");
 			goto isolate_fail_put;
 		}
@@ -1127,14 +1127,14 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		mod_node_page_state(page_pgdat(page),
 				NR_ISOLATED_ANON + page_is_file_lru(page),
 				thp_nr_pages(page));
-		//if(pg_owner->flag_gup == 1)
+		//if(pg_owner->flag_gup>0)
 		//	printk("No condition applies\n");
 isolate_success:
-		if(pg_owner->flag_gup == 1)
+		if(pg_owner->flag_gup>0)
 			printk("PAGE IS GUPed but isolation_success");
 		list_add(&page->lru, &cc->migratepages);
 isolate_success_no_list:
-		//if(pg_owner->flag_gup == 1)
+		//if(pg_owner->flag_gup>0)
 		//	printk("PAGE IS GUPed but isolate_success_no_list");
 		cc->nr_migratepages += compound_nr(page);
 		nr_isolated += compound_nr(page);
@@ -1155,7 +1155,7 @@ isolate_success_no_list:
 		continue;
 
 isolate_fail_put:
-		//if(pg_owner->flag_gup == 1)
+		//if(pg_owner->flag_gup>0)
 			;//printk("PAGE IS GUPed but isolate_fail_put");
 		/* Avoid potential deadlock in freeing page under lru_lock */
 		if (locked) {
@@ -1165,7 +1165,7 @@ isolate_fail_put:
 		put_page(page);
 
 isolate_fail:
-		//if(pg_owner->flag_gup == 1)
+		//if(pg_owner->flag_gup>0)
 			;//printk("PAGE IS GUPed but isolate_fail");
 		if (!skip_on_failure && ret != -ENOMEM)
 			continue;
@@ -1208,7 +1208,7 @@ isolate_fail:
 	page = NULL;
 
 isolate_abort:
-	//if(pg_owner->flag_gup == 1)
+	//if(pg_owner->flag_gup>0)
 		;//printk("PAGE IS GUPed but isolate_abort");
 	if (locked)
 		unlock_page_lruvec_irqrestore(locked, flags);
@@ -1235,7 +1235,7 @@ isolate_abort:
 						nr_scanned, nr_isolated);
 
 fatal_pending:
-    //if(pg_owner->flag_gup == 1)
+    //if(pg_owner->flag_gup>0)
 	//	;//printk("PAGE IS GUPed but fatal_pending");
 	cc->total_migrate_scanned += nr_scanned;
 	if (nr_isolated)

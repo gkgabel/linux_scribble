@@ -74,7 +74,7 @@ static ssize_t my_write(struct file *f, const char __user *buf, size_t len,
             continue;
         }
 		pg_owner = (void *)page_ext + page_owner_ops.offset;
-        if(pg_owner->flag_gup != 1)
+        if(pg_owner->flag_gup==0)
         {
             printk(KERN_INFO "not flagged. Check kernel");
         }
@@ -82,7 +82,7 @@ static ssize_t my_write(struct file *f, const char __user *buf, size_t len,
         {
             printk(KERN_INFO "------");
         }
-        //pg_owner->flag_gup = 1;
+        //pg_owner->flag_gup++;
 
         if(page_mapping(pages[i]))
             temp++;
@@ -132,18 +132,22 @@ static unsigned long count_gup_flagged(void)
     struct zone *zone;
     unsigned long ret = 0;
     //return ret;
+    //unsigned long *hist ;
+    unsigned long hist_flag = 0,count = 0;
     for_each_zone(zone)
     {
         struct page *page;
 	    unsigned long pfn = zone->zone_start_pfn;
 	    unsigned long end_pfn = pfn + zone->spanned_pages;
+        //for(unsigned long i = pfn/10000; i < end_pfn/10000; i++)
+        //    hist[i]=0;
 	    int pageblock_mt;
 	    pfn = zone->zone_start_pfn;
         for (; pfn < end_pfn; pfn++)
         {
             struct page_ext *page_ext;
             struct page_owner *pg_owner;
-	    struct page *page_temp = pfn_to_page(pfn);
+	        struct page *page_temp = pfn_to_page(pfn);
             if(!page_temp)continue;
             page_ext = lookup_page_ext(page_temp);
             
@@ -151,10 +155,23 @@ static unsigned long count_gup_flagged(void)
                 continue;
 
 	        pg_owner = (void *)page_ext + page_owner_ops.offset;
-            if(pg_owner->flag_gup == 1)
+            if(pfn%512 == 0)
+            {
+                hist_flag = 0;        
+            }
+            if(pg_owner->flag_gup>0)
+            {
+                //hist[pfn/10000]++;
+                if(hist_flag == 0)
+                {
+                    hist_flag = 1;
+                    count++;
+                }
                 ret++;
+            }
         }
     }
+   printk(KERN_INFO "COUNT OF DISTINCT PAGEBLOCK WITH GUP FLAGGED PAGES : %lu",count);
     return ret;
 }
 

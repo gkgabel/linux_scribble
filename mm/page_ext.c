@@ -217,6 +217,7 @@ struct page_ext *lookup_page_ext(const struct page *page)
 	 * allocated when feeding a range of pages to the allocator
 	 * for the first time during bootup or memory hotplug.
 	 */
+	if(section==NULL)return NULL;
 	if (!section->page_ext)
 		return NULL;
 	return get_entry(section->page_ext, pfn);

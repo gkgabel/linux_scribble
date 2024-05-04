@@ -1163,17 +1163,18 @@ static long __get_user_pages(struct mm_struct *mm,
 	long ret = 0, i = 0;
 	struct vm_area_struct *vma = NULL;
 	struct follow_page_context ctx = { NULL };
-	/*
+	
 	struct page_ext *page_ext;
     struct page_owner *pg_owner;
-	    page_ext = lookup_page_ext(pages[i]);
+	/*    page_ext = lookup_page_ext(pages[i]);
         if(page_ext == NULL)
             continue;
 
 		pg_owner = (void *)page_ext + page_owner_ops.offset;
-        pg_owner->flag_gup = 1;
+        pg_owner->flag_gup++;
 	*/
     //printk("__get_user_pages %lu\n",nr_pages);
+	//printk("nr_pinned == nr_pages %ld",static_branch_unlikely(&page_owner_inited));
 	if (!nr_pages)
 		return 0;
 
@@ -1297,35 +1298,38 @@ next_page:
 out:
 	if (ctx.pgmap)
 		put_dev_pagemap(ctx.pgmap);
-	/*
-    struct page_ext *page_ext;
-    struct page_owner *pg_owner;
+
 	if(!i)
 	{
-		for(int j=0;j<ret;j++)
+		if (static_branch_unlikely(&page_owner_inited))
 		{
-	    	page_ext = lookup_page_ext(pages[j]);
-        	if(page_ext != NULL)
-            {
-				pg_owner = (void *)page_ext + page_owner_ops.offset;
-        		pg_owner->flag_gup = 1;
+			for(long j=0;j<ret;j++)
+			{
+				page_ext = lookup_page_ext(pages[j]);
+    			if(page_ext != NULL)
+        		{
+					pg_owner = (void *)page_ext + page_owner_ops.offset;
+    				pg_owner->flag_gup++;
+				}
 			}
 		}
 	}
 	else
 	{
-		for(int j=0;j<i;j++)
+		if (static_branch_unlikely(&page_owner_inited))
 		{
-	    	page_ext = lookup_page_ext(pages[j]);
-        	if(page_ext != NULL)
-            {
-				pg_owner = (void *)page_ext + page_owner_ops.offset;
-        		pg_owner->flag_gup = 1;
+			for(long j=0;j<i;j++)
+			{
+				if(pages[j]==NULL)continue;
+				page_ext = lookup_page_ext(pages[j]);
+    			if(page_ext != NULL)
+        		{
+					pg_owner = (void *)page_ext + page_owner_ops.offset;
+    				pg_owner->flag_gup++;
+				}
 			}
 		}
 	}
-	*/
-
 	return i ? i : ret;
 }
 
@@ -1575,7 +1579,7 @@ retry:
     	if(page_ext != NULL)
         {
 			pg_owner = (void *)page_ext + page_owner_ops.offset;
-    		pg_owner->flag_gup = 1;
+    		pg_owner->flag_gup++;
 		}
 	}
 	*/
@@ -3063,13 +3067,17 @@ static int internal_get_user_pages_fast(unsigned long start,
 	nr_pinned = lockless_pages_from_mm(start, end, gup_flags, pages);
 	if (nr_pinned == nr_pages || gup_flags & FOLL_FAST_ONLY)
 	{
-		for(long j=0;j<nr_pinned;j++)
+		//printk("nr_pinned == nr_pages %ld",static_branch_unlikely(&page_owner_inited));
+		if (static_branch_unlikely(&page_owner_inited))
 		{
-			page_ext = lookup_page_ext(pages[j]);
-    		if(page_ext != NULL)
-        	{
-				pg_owner = (void *)page_ext + page_owner_ops.offset;
-    			pg_owner->flag_gup = 1;
+			for(long j=0;j<nr_pinned;j++)
+			{
+				page_ext = lookup_page_ext(pages[j]);
+    			if(page_ext != NULL)
+        		{
+					pg_owner = (void *)page_ext + page_owner_ops.offset;
+    				pg_owner->flag_gup++;
+				}
 			}
 		}
 		return nr_pinned;
@@ -3086,35 +3094,56 @@ static int internal_get_user_pages_fast(unsigned long start,
 		 */
 		if (nr_pinned)
 		{
-			for(long j=0;j<nr_pinned;j++)
+			printk("nr_pinned");
+			if (static_branch_unlikely(&page_owner_inited))
 			{
-				page_ext = lookup_page_ext(pages[j]);
-    			if(page_ext != NULL)
-        		{
-					pg_owner = (void *)page_ext + page_owner_ops.offset;
-    				pg_owner->flag_gup = 1;
+				for(long j=0;j<nr_pinned;j++)
+				{
+					if(pages[j]==NULL)
+					{
+						printk("------|------|------|------");
+						continue;
+					}
+					page_ext = lookup_page_ext(pages[j]);
+    				if(page_ext != NULL)
+        			{
+						pg_owner = (void *)page_ext + page_owner_ops.offset;
+    					pg_owner->flag_gup++;
+					}
 				}
 			}
 			return nr_pinned;
 		}
+		printk("ret");
+		if (static_branch_unlikely(&page_owner_inited))
+		{
 		for(long j=0;j<ret;j++)
 		{
+			if(pages[j]==NULL)
+			{
+				printk("------|------|------|------");
+				continue;
+			}
 			page_ext = lookup_page_ext(pages[j]);
     		if(page_ext != NULL)
         	{
 				pg_owner = (void *)page_ext + page_owner_ops.offset;
-    			pg_owner->flag_gup = 1;
+    			pg_owner->flag_gup++;
 			}
+		}
 		}
 		return ret;
 	}
-	for(long j=0;j<ret + nr_pinned;j++)
+	if (static_branch_unlikely(&page_owner_inited))
 	{
-		page_ext = lookup_page_ext(pages[j]);
-		if(page_ext != NULL)
-    	{
-			pg_owner = (void *)page_ext + page_owner_ops.offset;
-			pg_owner->flag_gup = 1;
+		for(long j=0;j<ret + nr_pinned;j++)
+		{
+			page_ext = lookup_page_ext(pages[j]);
+			if(page_ext != NULL)
+    		{
+				pg_owner = (void *)page_ext + page_owner_ops.offset;
+				pg_owner->flag_gup++;
+			}
 		}
 	}
 	return ret + nr_pinned;
