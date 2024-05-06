@@ -172,6 +172,21 @@ struct folio *try_grab_folio(struct page *page, int refs, unsigned int flags)
 
 static void gup_put_folio(struct folio *folio, int refs, unsigned int flags)
 {
+	struct page_ext *page_ext;
+    struct page_owner *pg_owner;
+	struct page *page;
+	for(unsigned int i=0;i < refs; i++)
+	{
+		page = folio_page(folio,i);
+		page_ext = lookup_page_ext(page);
+    	if(page_ext != NULL)
+		{	
+			pg_owner = (void *)page_ext + page_owner_ops.offset;
+        	if(pg_owner->flag_gup>0)
+				pg_owner->flag_gup--;
+		}
+	}
+	
 	if (flags & FOLL_PIN) {
 		node_stat_mod_folio(folio, NR_FOLL_PIN_RELEASED, refs);
 		if (folio_test_large(folio))
