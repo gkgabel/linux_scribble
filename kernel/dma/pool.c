@@ -268,7 +268,7 @@ struct page *dma_alloc_from_pool(struct device *dev, size_t size,
 {
 	struct gen_pool *pool = NULL;
 	struct page *page;
-
+	//printk(KERN_INFO "dma_alloc_from_pool-----\n");
 	while ((pool = dma_guess_pool(pool, gfp))) {
 		page = __dma_alloc_from_pool(dev, size, pool, cpu_addr,
 					     phys_addr_ok);

@@ -80,7 +80,7 @@ static ssize_t my_write(struct file *f, const char __user *buf, size_t len,
         }
         else
         {
-            printk(KERN_INFO "------");
+            printk(KERN_INFO "---pfn pinned %lu---",page_to_pfn(pages[i]));
         }
         //pg_owner->flag_gup++;
 

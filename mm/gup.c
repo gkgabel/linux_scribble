@@ -1333,6 +1333,8 @@ out:
 	{
 		if (static_branch_unlikely(&page_owner_inited))
 		{
+			if(pages!=NULL)
+			{
 			for(long j=0;j<i;j++)
 			{
 				if(pages[j]==NULL)continue;
@@ -1342,6 +1344,7 @@ out:
 					pg_owner = (void *)page_ext + page_owner_ops.offset;
     				pg_owner->flag_gup++;
 				}
+			}
 			}
 		}
 	}

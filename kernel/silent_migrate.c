@@ -1,8 +1,12 @@
 #include <../arch/x86/include/asm/tlbflush.h>
 #include <../include/linux/migrate.h>
 #include <linux/syscalls.h>
+#include <../include/linux/rmap.h>
+#include <linux/page_owner.h>
+#include <linux/page_ext.h>
+#include <linux/pagemap.h>
 
-SYSCALL_DEFINE0(silent_migrate)
+SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 {
 	struct mm_struct *mm;
 	struct vm_area_struct *vmi;
@@ -17,18 +21,24 @@ SYSCALL_DEFINE0(silent_migrate)
 	pteval_t pte_flag;
 	int flag = 1;
 	char *vaddr_src, *vaddr_dst;
-	mm = current->mm;
-	
+	if(pid == -1)
+		mm = current->mm;
+	else
+	{
+		//if(get_pid_task(find_get_pid(pid),PIDTYPE_TGID)==NULL)return 0;
+		mm = get_pid_task(find_get_pid(pid),PIDTYPE_PID)->mm;
+	}
+	printk(KERN_INFO "antering loop\n");
 	for(vmi = mm->mmap; vmi != NULL ; vmi = vmi->vm_next)
 	{	
 		//printk("line 22\n"); printk("vmi_start vmi_end %lu %lu \n",vmi->vm_start,vmi->vm_end);
 		//Current implementation only takes in account the anonymous vma region
-		if(!vma_is_anonymous(vmi))
-			continue;
+		//if(!vma_is_anonymous(vmi))
+		//	continue;
 		//printk("line 26\n");
 		//Also skipping the stack pages currently
-		if(mm->start_stack >= vmi->vm_start && mm->start_stack <= vmi->vm_end)
-			continue;
+		if(mm->start_stack >= vmi->vm_start && mm->start_stack <= vmi->vm_end);
+			//continue;
 		//printk("Line 30\n");
 		//Iterate over base page size
 		for( vpage = vmi->vm_start ; vpage < vmi->vm_end ; vpage += 4096 )
@@ -57,8 +67,41 @@ SYSCALL_DEFINE0(silent_migrate)
 			//printk("vpage addr = %lu\n", vpage);
 			
 			struct page *src = pte_page(*pte);
-			printk("mapcount and refcount %d %d\n",page_count(src),total_mapcount(src));
+			printk(KERN_INFO "page_count and mapcount & page to pfn %d %d",page_count(src),page_mapcount(src));
+        
+			printk("pfn---%lu",page_to_pfn(src));
+			struct anon_vma *anon_vma;
+    		struct anon_vma_chain *avc;
+    		struct vm_area_struct *vma;
+			unsigned int n=0;
+			struct page_ext *page_ext;
+    		struct page_owner *pg_owner;
+			page_ext = lookup_page_ext(src);
+			if(page_ext != NULL)
+			{
+				pg_owner = (void *)page_ext + page_owner_ops.offset;
+        		if(pg_owner->flag_gup != 0)
+        		{
+					printk(KERN_INFO "FLAG_GUP\n");
+					anon_vma = folio_lock_anon_vma_read(page_folio(src), NULL);
+    				if (anon_vma) {
+        				//anon_vma_lock_read(anon_vma);
+        				anon_vma_interval_tree_foreach(avc, &anon_vma->rb_root, src->index, src->index) {
+            				vma = avc->vma;
+            				n++;
+        				}
+					}
+					page_unlock_anon_vma_read(anon_vma);
+					printk("Paged Mapped %u times=\n",n);
+				}
+
+			}
+			/*
+        	//anon_vma_unlock_read(anon_vma);
+			
+			//printk("mapcount and refcount %d %d\n",page_count(src),total_mapcount(src));
 			//Can rremove this later. iT WAS THERE JUST TO TEST
+			//PagePrivate() probably means that we do not have a struct page for a physical page
 			if(PagePrivate(src))
 			{
 				printk("Page Private");
@@ -139,9 +182,10 @@ SYSCALL_DEFINE0(silent_migrate)
 			//kunmap(src);
 			//kunmap(dst);
 			flag = 1;
+			*/
 		}
 		//printk("line 92\n");
 	}
-	printk("Number of Total & Successful & Aborted Attempts & Mismatch Contents= %lu %lu %lu %lu",success+abort,success,abort,mismatch);
+	printk("Number of Total & Successful & Aborted Attempts & Mismatch Contents= %lu %lu %lu %lu\n",success+abort,success,abort,mismatch);
 	return 0;
 }

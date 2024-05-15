@@ -627,7 +627,6 @@ static dma_addr_t iommu_dma_alloc_iova(struct iommu_domain *domain,
 	struct iommu_dma_cookie *cookie = domain->iova_cookie;
 	struct iova_domain *iovad = &cookie->iovad;
 	unsigned long shift, iova_len, iova = 0;
-
 	if (cookie->type == IOMMU_DMA_MSI_COOKIE) {
 		cookie->msi_iova += size;
 		return cookie->msi_iova - size;
@@ -798,7 +797,7 @@ static struct page **__iommu_dma_alloc_noncontiguous(struct device *dev,
 	struct page **pages;
 	dma_addr_t iova;
 	ssize_t ret;
-
+	printk(KERN_INFO "__iommu_dma_alloc_noncontiguous---------\n");
 	if (static_branch_unlikely(&iommu_deferred_attach_enabled) &&
 	    iommu_deferred_attach(dev, domain))
 		return NULL;
@@ -859,7 +858,7 @@ static void *iommu_dma_alloc_remap(struct device *dev, size_t size,
 	struct page **pages;
 	struct sg_table sgt;
 	void *vaddr;
-
+	printk(KERN_INFO "iommu_dma_alloc_remap---\n");
 	pages = __iommu_dma_alloc_noncontiguous(dev, size, &sgt, gfp, prot,
 						attrs);
 	if (!pages)
@@ -984,7 +983,7 @@ static dma_addr_t iommu_dma_map_page(struct device *dev, struct page *page,
 	struct iommu_dma_cookie *cookie = domain->iova_cookie;
 	struct iova_domain *iovad = &cookie->iovad;
 	dma_addr_t iova, dma_mask = dma_get_mask(dev);
-
+	//printk(KERN_INFO "iommu_dma_map_page----\n");
 	/*
 	 * If both the physical buffer start address and size are
 	 * page aligned, we don't need to use a bounce page.
@@ -1409,7 +1408,7 @@ static void *iommu_dma_alloc_pages(struct device *dev, size_t size,
 	int node = dev_to_node(dev);
 	struct page *page = NULL;
 	void *cpu_addr;
-
+	printk(KERN_INFO "iommu_dma_alloc_pages\n");
 	page = dma_alloc_contiguous(dev, alloc_size, gfp);
 	if (!page)
 		page = alloc_pages_node(node, gfp, get_order(alloc_size));
@@ -1445,7 +1444,7 @@ static void *iommu_dma_alloc(struct device *dev, size_t size,
 	int ioprot = dma_info_to_prot(DMA_BIDIRECTIONAL, coherent, attrs);
 	struct page *page = NULL;
 	void *cpu_addr;
-
+	printk(KERN_INFO "iommu_dma_alloc------\n");
 	gfp |= __GFP_ZERO;
 
 	if (gfpflags_allow_blocking(gfp) &&

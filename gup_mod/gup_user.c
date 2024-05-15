@@ -50,7 +50,7 @@ int main() {
         printf("Pages GUPed: %ld \n",ret);
     }
     
-    //sleep(60);
+    sleep(60);
     for(unsigned long i=0;i<NR_ALLOC;i++)
     {
             if(i%10)
