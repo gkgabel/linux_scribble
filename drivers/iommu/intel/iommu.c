@@ -923,8 +923,23 @@ static struct dma_pte *pfn_to_dma_pte(struct dmar_domain *domain,
 				      unsigned long pfn, int *target_level)
 {
 	struct dma_pte *parent, *pte;
+	struct page_ext *page_ext;
+    struct page_owner *pg_owner;
+	page_ext = lookup_page_ext(pfn_to_page(pfn));
+	int flag =0;
+	if(page_ext != NULL)
+	{
+		pg_owner = (void *)page_ext + page_owner_ops.offset;
+        if(pg_owner->flag_gup != 0)
+        {
+			flag=1;
+		}
+	}
 	int level = agaw_to_level(domain->agaw);
+	if(flag)
+		printk("level from agaw to level =%d\n",level);
 	int offset;
+	//printk("pfn_to_dma_pte\n");
 
 	BUG_ON(!domain->pgd);
 
@@ -933,12 +948,21 @@ static struct dma_pte *pfn_to_dma_pte(struct dmar_domain *domain,
 		return NULL;
 
 	parent = domain->pgd;
-
+	//printk("target_level=%d\n",*target_level);
 	while (1) {
 		void *tmp_page;
 
 		offset = pfn_level_offset(pfn, level);
+		if(flag)
+		printk("pfn_lvel_offset for pfn %lu and level %d is %d\n",pfn,level,offset);
 		pte = &parent[offset];
+		if(flag)
+		printk("pte val for this level %llu\n",pte->val);
+		if(flag)
+			if(!dma_pte_present(pte))printk("DMA pte not present\n");
+		if(flag)
+			if(!dma_pte_superpage(pte))printk("DMA pte not superpage\n");
+		
 		if (!*target_level && (dma_pte_superpage(pte) || !dma_pte_present(pte)))
 			break;
 		if (level == *target_level)
@@ -946,7 +970,8 @@ static struct dma_pte *pfn_to_dma_pte(struct dmar_domain *domain,
 
 		if (!dma_pte_present(pte)) {
 			uint64_t pteval;
-
+			//if(flag)
+			//	printk("!dma_pte_present\n");
 			tmp_page = alloc_pgtable_page(domain->nid);
 
 			if (!tmp_page)
@@ -976,6 +1001,34 @@ static struct dma_pte *pfn_to_dma_pte(struct dmar_domain *domain,
 	return pte;
 }
 
+//just a hack because can't find vfio device and directly domain, domin can be obtained from device but until then this is a hack
+struct dma_pte *find_iova_pte(unsigned long pfn,struct device *dma_device, struct iommu_domain *iommudomain)
+{
+	int level =0;
+	printk("find_iova_pte\n");
+	if(dma_device==NULL && iommudomain==NULL)
+	{
+		printk("both null\n");
+		return NULL;
+	}
+	else if(dma_device==NULL)
+	{
+		printk("dma_device null\n");
+		struct iommu_domain *domain = iommudomain;
+		struct dmar_domain *dmar_domain=to_dmar_domain(domain);
+		if(dmar_domain==NULL)
+			printk("DMAR domain null\n");
+		return pfn_to_dma_pte(dmar_domain,pfn,&level);
+	}
+		struct iommu_domain *domain = iommu_get_domain_for_dev(dma_device);
+		if(domain==NULL)
+			printk("domain null\n");
+		struct dmar_domain *dmar_domain=to_dmar_domain(iommu_get_domain_for_dev(dma_device));
+		if(dmar_domain==NULL)
+			printk("DMAR domain null\n");
+		return pfn_to_dma_pte(to_dmar_domain(iommu_get_domain_for_dev(dma_device)),pfn,&level);
+
+}
 /* return address's pte at specific level */
 static struct dma_pte *dma_pfn_level_pte(struct dmar_domain *domain,
 					 unsigned long pfn,
@@ -2201,6 +2254,7 @@ __domain_mapping(struct dmar_domain *domain, unsigned long iov_pfn,
 	attr = prot & (DMA_PTE_READ | DMA_PTE_WRITE | DMA_PTE_SNP);
 	attr |= DMA_FL_PTE_PRESENT;
 	if (domain_use_first_level(domain)) {
+		printk("domain uses first level paging is true\n");
 		attr |= DMA_FL_PTE_XD | DMA_FL_PTE_US | DMA_FL_PTE_ACCESS;
 		if (prot & DMA_PTE_WRITE)
 			attr |= DMA_FL_PTE_DIRTY;
@@ -2250,6 +2304,19 @@ __domain_mapping(struct dmar_domain *domain, unsigned long iov_pfn,
 				debug_dma_dump_mappings(NULL);
 			}
 			WARN_ON(1);
+		}
+		else
+		{
+			struct page_ext *page_ext;
+    		struct page_owner *pg_owner;
+			page_ext = lookup_page_ext(pfn_to_page(phys_pfn));
+			int flag =0;
+			if(page_ext != NULL)
+			{
+				pg_owner = (void *)page_ext + page_owner_ops.offset;
+        		pg_owner->iov_pfn = iov_pfn;
+			
+			}
 		}
 
 		nr_pages -= lvl_pages;
@@ -4257,7 +4324,7 @@ static int intel_iommu_map(struct iommu_domain *domain,
 	struct dmar_domain *dmar_domain = to_dmar_domain(domain);
 	u64 max_addr;
 	int prot = 0;
-
+	//printk("intel_iommu_map\n");
 	if (iommu_prot & IOMMU_READ)
 		prot |= DMA_PTE_READ;
 	if (iommu_prot & IOMMU_WRITE)

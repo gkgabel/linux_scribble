@@ -840,3 +840,5 @@ static inline const char *decode_prq_descriptor(char *str, size_t size,
 }
 
 #endif
+
+struct dma_pte *find_iova_pte(unsigned long pfn,struct device *dma_device,struct iommu_domain *iommudomain);

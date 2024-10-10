@@ -41,6 +41,9 @@
 #include <linux/irqdomain.h>
 #include "vfio.h"
 
+#include <linux/page_owner.h>
+#include <linux/page_ext.h>
+
 #define DRIVER_VERSION  "0.2"
 #define DRIVER_AUTHOR   "Alex Williamson <alex.williamson@redhat.com>"
 #define DRIVER_DESC     "Type1 IOMMU driver for VFIO"
@@ -553,7 +556,7 @@ static int vaddr_get_pfns(struct mm_struct *mm, unsigned long vaddr,
 
 	if (prot & IOMMU_WRITE)
 		flags |= FOLL_WRITE;
-
+	printk("vaddr_get_pfns\n");
 	mmap_read_lock(mm);
 	ret = pin_user_pages_remote(mm, vaddr, npages, flags | FOLL_LONGTERM,
 				    pages, NULL, NULL);
@@ -665,7 +668,9 @@ static long vfio_pin_pages_remote(struct vfio_dma *dma, unsigned long vaddr,
 	long ret, pinned = 0, lock_acct = 0;
 	bool rsvd;
 	dma_addr_t iova = vaddr - dma->vaddr + dma->iova;
-
+	printk("vfio_pin_pages_remote\n");
+	printk("batch size: %d\n", batch->size);
+	printk("batch offset: %d\n", batch->offset);
 	/* This code path is only user initiated */
 	if (!mm)
 		return -ENODEV;
@@ -680,19 +685,28 @@ static long vfio_pin_pages_remote(struct vfio_dma *dma, unsigned long vaddr,
 	}
 
 	while (npage) {
+		printk("current batch offset: %d\n", batch->offset);
+		printk("pfn_base: %lu\n", *pfn_base);
+		printk("batch size: %d\n", batch->size);
+		printk("line691-pfn: %lu\n", pfn);
+		printk("pinned: %ld\n", pinned);
+		printk("npages: %ld\n", npage);
 		if (!batch->size) {
 			/* Empty batch, so refill it. */
 			long req_pages = min_t(long, npage, batch->capacity);
-
+			printk("req_pages: %ld\n", req_pages);
 			ret = vaddr_get_pfns(mm, vaddr, req_pages, dma->prot,
 					     &pfn, batch->pages);
+			
 			if (ret < 0)
 				goto unpin_out;
-
+			printk("pfn: %lu\n", pfn);
+			printk("ret: %lu\n", ret);
 			batch->size = ret;
 			batch->offset = 0;
 
 			if (!*pfn_base) {
+				printk("pfn_base is 0\n");
 				*pfn_base = pfn;
 				rsvd = is_invalid_reserved_pfn(*pfn_base);
 			}
@@ -709,7 +723,10 @@ static long vfio_pin_pages_remote(struct vfio_dma *dma, unsigned long vaddr,
 		while (true) {
 			if (pfn != *pfn_base + pinned ||
 			    rsvd != is_invalid_reserved_pfn(pfn))
-				goto out;
+				{
+					printk("going out bye\n");
+					goto out;
+				}
 
 			/*
 			 * Reserved pages aren't counted against the user,
@@ -740,6 +757,7 @@ static long vfio_pin_pages_remote(struct vfio_dma *dma, unsigned long vaddr,
 			pfn = page_to_pfn(batch->pages[batch->offset]);
 		}
 
+
 		if (unlikely(disable_hugepages))
 			break;
 	}
@@ -763,7 +781,9 @@ unpin_out:
 
 		return ret;
 	}
-
+	printk("total pinned: %ld\n", pinned);
+	printk("batch size: %d\n", batch->size);
+	printk("batch offset: %d\n", batch->offset);
 	return pinned;
 }
 
@@ -1478,10 +1498,29 @@ static int vfio_iommu_map(struct vfio_iommu *iommu, dma_addr_t iova,
 {
 	struct vfio_domain *d;
 	int ret;
-
+	printk("------|vfio_iommu_map\n");
 	list_for_each_entry(d, &iommu->domain_list, next) {
+		printk(" line 1501\n");
 		ret = iommu_map(d->domain, iova, (phys_addr_t)pfn << PAGE_SHIFT,
 				npage << PAGE_SHIFT, prot | IOMMU_CACHE);
+		for(int i=0;i<npage << PAGE_SHIFT;i++)
+		{
+			//printk("------|vfio_iommu_map\n");
+			struct page_ext *page_ext;
+			struct page_owner *pg_owner;
+			page_ext = lookup_page_ext(pfn_to_page(pfn+i));
+			if(page_ext != NULL)
+			{
+				pg_owner = (void *)page_ext + page_owner_ops.offset;
+				if(pg_owner==NULL)
+					printk("pg_owner is null\n");
+				//printk("line 1517\n");
+				if(pg_owner->flag_gup>0)
+					pg_owner->iommu_domain=d->domain;
+			}
+			//printk("line 1523\n");
+		}
+		//printk(" line 1525\n");
 		if (ret)
 			goto unwind;
 
@@ -1492,7 +1531,9 @@ static int vfio_iommu_map(struct vfio_iommu *iommu, dma_addr_t iova,
 
 unwind:
 	list_for_each_entry_continue_reverse(d, &iommu->domain_list, next) {
+		printk("--line 1515\n");
 		iommu_unmap(d->domain, iova, npage << PAGE_SHIFT);
+		printk("--line 1517\n");
 		cond_resched();
 	}
 
@@ -1511,30 +1552,79 @@ static int vfio_pin_map_dma(struct vfio_iommu *iommu, struct vfio_dma *dma,
 	int ret = 0;
 
 	vfio_batch_init(&batch);
-
+	printk("map_size=%lu\n",map_size);
 	while (size) {
+		struct page_ext *page_ext;
+		struct page_owner *pg_owner;
+		struct vfio_device *device_it=NULL,*device=NULL;
 		/* Pin a contiguous chunk of memory */
 		npage = vfio_pin_pages_remote(dma, vaddr + dma->size,
 					      size >> PAGE_SHIFT, &pfn, limit,
 					      &batch);
+			
+		printk("npage=%ld\n",npage);
+		printk("------|vfio_pin_map_dma\n");
+		if(iommu->device_list.next==iommu->device_list.prev)
+			printk("device list is empty\n");
+		//can list head prev ever be null? prob not, then remove this
+		if(iommu->device_list.prev==NULL)
+			printk("device list is null\n");
+		list_for_each_entry(device_it, &iommu->device_list, iommu_entry)
+		{
+			printk("line 1552 device %lu",device_it);
+			device=device_it;
+		}
+		if(device==NULL)
+			printk("line 1556 device is null\n");
+		for(long int i=0;i<npage;i++)
+		{
+			printk("------|vfio_pin_map_dma\n");
+			if(batch.pages==NULL)
+				printk("pages null line 1556\n");
+			if(batch.pages[i]==NULL)
+				printk("----page is null for i =%ld\n",i);
+			printk("line 1556\n");
+			page_ext = lookup_page_ext(batch.pages[i]);
+			if(page_ext != NULL)
+			{
+				printk("--page ext not null\n");
+				pg_owner = (void *)page_ext + page_owner_ops.offset;
+				if(pg_owner==NULL)
+					printk("pg_owner is null\n");
+				printk("line 1567\n");
+				printk("pg_owner =%lu",pg_owner);
+				printk("device=%lu\n",device);
+				//printk("device->dev=%lu\n",device->dev);
+				if(device ==NULL) //don't forget device is vfio_device struct not device struct that is vfio_device->dev
+        			pg_owner->dma_device=NULL;
+				printk("1568\n");
+			//if(pg_owner->flag_gup==0)printk("---gup flag is null,how\n");
+			//if(pg_owner->dma_device!=NULL)
+			//	printk("---device not null\n"); 
+			}
+			printk("line 1570\n");
+		}
 		if (npage <= 0) {
 			WARN_ON(!npage);
 			ret = (int)npage;
 			break;
 		}
-
+		printk("------line 1568\n");
 		/* Map it! */
 		ret = vfio_iommu_map(iommu, iova + dma->size, pfn, npage,
 				     dma->prot);
+		printk("------line 1572\n");
 		if (ret) {
+			printk("------line 1574\n");
 			vfio_unpin_pages_remote(dma, iova + dma->size, pfn,
 						npage, true);
 			vfio_batch_unpin(&batch, dma);
 			break;
 		}
-
+		printk("------line 1578\n");
 		size -= npage << PAGE_SHIFT;
 		dma->size += npage << PAGE_SHIFT;
+		printk("--line 1581--\n");
 	}
 
 	vfio_batch_fini(&batch);
@@ -1694,6 +1784,12 @@ static int vfio_dma_do_map(struct vfio_iommu *iommu,
 			vfio_remove_dma(iommu, dma);
 	}
 
+	struct vfio_device *device_it=NULL,*device=NULL;
+		list_for_each_entry(device_it, &iommu->device_list, iommu_entry)
+		{
+			printk("line 1776 device %lu",device_it);
+			device=device_it;
+		}
 out_unlock:
 	mutex_unlock(&iommu->lock);
 	return ret;
@@ -2851,7 +2947,13 @@ static int vfio_iommu_type1_map_dma(struct vfio_iommu *iommu,
 
 	if (map.argsz < minsz || map.flags & ~mask)
 		return -EINVAL;
-
+	
+	struct vfio_device *device_it=NULL,*device=NULL;
+		list_for_each_entry(device_it, &iommu->device_list, iommu_entry)
+		{
+			printk("line 2931 device %lu",device_it);
+			device=device_it;
+		}
 	return vfio_dma_do_map(iommu, &map);
 }
 
@@ -3016,7 +3118,20 @@ static long vfio_iommu_type1_ioctl(void *iommu_data,
 				   unsigned int cmd, unsigned long arg)
 {
 	struct vfio_iommu *iommu = iommu_data;
-
+	struct vfio_device *device_it=NULL,*device=NULL;
+	if(iommu==NULL)
+	{
+		printk("line 3099 iommu is null");
+		//return -ENODEV;
+	}
+	else
+	{
+		list_for_each_entry(device_it, &iommu->device_list, iommu_entry)
+		{
+			printk("line 3101 device %lu",device_it);
+			device=device_it;
+		}
+	}
 	switch (cmd) {
 	case VFIO_CHECK_EXTENSION:
 		return vfio_iommu_type1_check_extension(iommu, arg);

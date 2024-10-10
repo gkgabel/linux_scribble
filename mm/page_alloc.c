@@ -4177,7 +4177,7 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
 	struct pglist_data *last_pgdat = NULL;
 	bool last_pgdat_dirty_ok = false;
 	bool no_fallback;
-
+	printk("get_page_from_freelist");
 retry:
 	/*
 	 * Scan zonelist, looking for a zone with enough free.
@@ -4294,7 +4294,7 @@ try_this_zone:
 			 */
 			if (unlikely(order && (alloc_flags & ALLOC_HARDER)))
 				reserve_highatomic_pageblock(page, zone, order);
-
+			//printk("get_page_from_freelist success");
 			return page;
 		} else {
 #ifdef CONFIG_DEFERRED_STRUCT_PAGE_INIT
@@ -4315,7 +4315,7 @@ try_this_zone:
 		alloc_flags &= ~ALLOC_NOFRAGMENT;
 		goto retry;
 	}
-
+	//printk("get_page_from_freelist failed");
 	return NULL;
 }
 

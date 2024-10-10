@@ -441,7 +441,7 @@ alloc_iova_fast(struct iova_domain *iovad, unsigned long size,
 {
 	unsigned long iova_pfn;
 	struct iova *new_iova;
-
+	//printk("alloc_iova_fast\n");
 	/*
 	 * Freeing non-power-of-two-sized allocations back into the IOVA caches
 	 * will come back to bite us badly, so we have to waste a bit of space

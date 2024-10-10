@@ -19,6 +19,9 @@ struct page_owner {
 	pid_t pid;
 	pid_t tgid;
 	int flag_gup;
+	struct device *dma_device;
+	struct iommu_domain *iommu_domain;
+	unsigned long iov_pfn;
 };
 
 extern void __reset_page_owner(struct page *page, unsigned short order);

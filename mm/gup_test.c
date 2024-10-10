@@ -142,6 +142,7 @@ static int __gup_test_ioctl(unsigned int cmd,
 					    NULL);
 			break;
 		case PIN_FAST_BENCHMARK:
+			printk("__gup_test_ioctl"\n);
 			nr = pin_user_pages_fast(addr, nr, gup->gup_flags,
 						 pages + i);
 			break;

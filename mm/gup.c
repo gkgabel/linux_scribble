@@ -1181,6 +1181,7 @@ static long __get_user_pages(struct mm_struct *mm,
 	
 	struct page_ext *page_ext;
     struct page_owner *pg_owner;
+	//printk("__get_user_pages\n");
 	/*    page_ext = lookup_page_ext(pages[i]);
         if(page_ext == NULL)
             continue;
@@ -1587,6 +1588,8 @@ retry:
 		mmap_read_unlock(mm);
 		*locked = 0;
 	}
+
+	//printk(" __get_user_pages_locked");
 	/*
 	struct page_ext *page_ext;
     struct page_owner *pg_owner;
@@ -2161,7 +2164,7 @@ static long __gup_longterm_locked(struct mm_struct *mm,
 {
 	unsigned int flags;
 	long rc;
-
+	printk(" __gup_longterm_locked\n");
 	if (!(gup_flags & FOLL_LONGTERM))
 		return __get_user_pages_locked(mm, start, nr_pages, pages, vmas,
 					       NULL, gup_flags);
@@ -2210,6 +2213,7 @@ static long __get_user_pages_remote(struct mm_struct *mm,
 	 * callers that do request FOLL_LONGTERM, but do not set locked. So,
 	 * allow what we can.
 	 */
+	//printk("__get_user_pages_remote\n");
 	if (gup_flags & FOLL_LONGTERM) {
 		if (WARN_ON_ONCE(locked))
 			return -EINVAL;
@@ -3268,6 +3272,7 @@ EXPORT_SYMBOL_GPL(get_user_pages_fast);
 int pin_user_pages_fast(unsigned long start, int nr_pages,
 			unsigned int gup_flags, struct page **pages)
 {
+	printk("pin_user_pages_fast\n");
 	/* FOLL_GET and FOLL_PIN are mutually exclusive. */
 	if (WARN_ON_ONCE(gup_flags & FOLL_GET))
 		return -EINVAL;
@@ -3290,7 +3295,7 @@ int pin_user_pages_fast_only(unsigned long start, int nr_pages,
 			     unsigned int gup_flags, struct page **pages)
 {
 	int nr_pinned;
-
+	printk("pin_user_pages_fast_only\n");
 	/*
 	 * FOLL_GET and FOLL_PIN are mutually exclusive. Note that the API
 	 * rules require returning 0, rather than -errno:
@@ -3346,6 +3351,7 @@ long pin_user_pages_remote(struct mm_struct *mm,
 			   unsigned int gup_flags, struct page **pages,
 			   struct vm_area_struct **vmas, int *locked)
 {
+	printk("pin_user_pages_remote\n");
 	/* FOLL_GET and FOLL_PIN are mutually exclusive. */
 	if (WARN_ON_ONCE(gup_flags & FOLL_GET))
 		return -EINVAL;
@@ -3388,6 +3394,7 @@ long pin_user_pages(unsigned long start, unsigned long nr_pages,
 		return -EINVAL;
 
 	gup_flags |= FOLL_PIN;
+	printk("pin_user_pages\n");
 	return __gup_longterm_locked(current->mm, start, nr_pages,
 				     pages, vmas, gup_flags);
 }
@@ -3402,6 +3409,7 @@ long pin_user_pages_unlocked(unsigned long start, unsigned long nr_pages,
 			     struct page **pages, unsigned int gup_flags)
 {
 	/* FOLL_GET and FOLL_PIN are mutually exclusive. */
+	printk("pin_user_pages_unlocked\n");
 	if (WARN_ON_ONCE(gup_flags & FOLL_GET))
 		return -EINVAL;
 

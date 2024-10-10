@@ -639,6 +639,7 @@ static dma_addr_t iommu_dma_alloc_iova(struct iommu_domain *domain,
 
 	if (domain->geometry.force_aperture)
 		dma_limit = min(dma_limit, (u64)domain->geometry.aperture_end);
+	//printk("iommu_dma_alloc_iova device==%lu \n",dev);
 
 	/* Try to get PCI devices a SAC address */
 	if (dma_limit > DMA_BIT_MASK(32) && !iommu_dma_forcedac && dev_is_pci(dev))
@@ -797,7 +798,7 @@ static struct page **__iommu_dma_alloc_noncontiguous(struct device *dev,
 	struct page **pages;
 	dma_addr_t iova;
 	ssize_t ret;
-	printk(KERN_INFO "__iommu_dma_alloc_noncontiguous---------\n");
+	//printk(KERN_INFO "__iommu_dma_alloc_noncontiguous---------\n");
 	if (static_branch_unlikely(&iommu_deferred_attach_enabled) &&
 	    iommu_deferred_attach(dev, domain))
 		return NULL;
@@ -858,7 +859,7 @@ static void *iommu_dma_alloc_remap(struct device *dev, size_t size,
 	struct page **pages;
 	struct sg_table sgt;
 	void *vaddr;
-	printk(KERN_INFO "iommu_dma_alloc_remap---\n");
+	//printk(KERN_INFO "iommu_dma_alloc_remap---\n");
 	pages = __iommu_dma_alloc_noncontiguous(dev, size, &sgt, gfp, prot,
 						attrs);
 	if (!pages)
@@ -983,7 +984,7 @@ static dma_addr_t iommu_dma_map_page(struct device *dev, struct page *page,
 	struct iommu_dma_cookie *cookie = domain->iova_cookie;
 	struct iova_domain *iovad = &cookie->iovad;
 	dma_addr_t iova, dma_mask = dma_get_mask(dev);
-	//printk(KERN_INFO "iommu_dma_map_page----\n");
+	//printk(KERN_INFO "iommu_dma_map_page\n");
 	/*
 	 * If both the physical buffer start address and size are
 	 * page aligned, we don't need to use a bounce page.
@@ -1033,6 +1034,8 @@ static void iommu_dma_unmap_page(struct device *dev, dma_addr_t dma_handle,
 	phys_addr_t phys;
 
 	phys = iommu_iova_to_phys(domain, dma_handle);
+	if(!phys)
+		printk("Found no physical translation for iov address %lu , iov pfn %lu in the device %lu ",dma_handle,dma_handle >> PAGE_SHIFT,dev);
 	if (WARN_ON(!phys))
 		return;
 
@@ -1181,6 +1184,7 @@ out_unmap:
 static int iommu_dma_map_sg(struct device *dev, struct scatterlist *sg,
 		int nents, enum dma_data_direction dir, unsigned long attrs)
 {
+	//printk("iommu_dma_map_sg\n");
 	struct iommu_domain *domain = iommu_get_dma_domain(dev);
 	struct iommu_dma_cookie *cookie = domain->iova_cookie;
 	struct iova_domain *iovad = &cookie->iovad;
@@ -1271,7 +1275,7 @@ static int iommu_dma_map_sg(struct device *dev, struct scatterlist *sg,
 
 	if (!iova_len)
 		return __finalise_sg(dev, sg, nents, 0);
-
+	//printk("iommu_dma_alloc_iova will be called by iommu_dma_map_sg\n");
 	iova = iommu_dma_alloc_iova(domain, iova_len, dma_get_mask(dev), dev);
 	if (!iova) {
 		ret = -ENOMEM;
@@ -1408,7 +1412,7 @@ static void *iommu_dma_alloc_pages(struct device *dev, size_t size,
 	int node = dev_to_node(dev);
 	struct page *page = NULL;
 	void *cpu_addr;
-	printk(KERN_INFO "iommu_dma_alloc_pages\n");
+	//printk(KERN_INFO "iommu_dma_alloc_pages\n");
 	page = dma_alloc_contiguous(dev, alloc_size, gfp);
 	if (!page)
 		page = alloc_pages_node(node, gfp, get_order(alloc_size));
@@ -1444,7 +1448,7 @@ static void *iommu_dma_alloc(struct device *dev, size_t size,
 	int ioprot = dma_info_to_prot(DMA_BIDIRECTIONAL, coherent, attrs);
 	struct page *page = NULL;
 	void *cpu_addr;
-	printk(KERN_INFO "iommu_dma_alloc------\n");
+	//printk(KERN_INFO "iommu_dma_alloc------\n");
 	gfp |= __GFP_ZERO;
 
 	if (gfpflags_allow_blocking(gfp) &&

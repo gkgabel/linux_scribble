@@ -182,7 +182,7 @@ static int __dma_map_sg_attrs(struct device *dev, struct scatterlist *sg,
 {
 	const struct dma_map_ops *ops = get_dma_ops(dev);
 	int ents;
-
+	//printk("__dma_map_sg_attrs device=%lu\n",dev);
 	BUG_ON(!valid_dma_direction(dir));
 
 	if (WARN_ON_ONCE(!dev->dma_mask))
@@ -190,7 +190,10 @@ static int __dma_map_sg_attrs(struct device *dev, struct scatterlist *sg,
 
 	if (dma_map_direct(dev, ops) ||
 	    arch_dma_map_sg_direct(dev, sg, nents))
+		{
+			printk("dma map direct works here\n");
 		ents = dma_direct_map_sg(dev, sg, nents, dir, attrs);
+		}
 	else
 		ents = ops->map_sg(dev, sg, nents, dir, attrs);
 
@@ -263,7 +266,7 @@ int dma_map_sgtable(struct device *dev, struct sg_table *sgt,
 		    enum dma_data_direction dir, unsigned long attrs)
 {
 	int nents;
-
+	//printk("dma_map_sgtable\n");
 	nents = __dma_map_sg_attrs(dev, sgt->sgl, sgt->orig_nents, dir, attrs);
 	if (nents < 0)
 		return nents;

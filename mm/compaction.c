@@ -1130,8 +1130,8 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		//if(pg_owner->flag_gup>0)
 		//	printk("No condition applies\n");
 isolate_success:
-		if(pg_owner->flag_gup>0)
-			printk("PAGE IS GUPed but isolation_success");
+		//if(pg_owner->flag_gup>0)
+		// printk("PAGE IS GUPed but isolation_success");
 		list_add(&page->lru, &cc->migratepages);
 isolate_success_no_list:
 		//if(pg_owner->flag_gup>0)

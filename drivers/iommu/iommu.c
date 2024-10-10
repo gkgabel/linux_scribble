@@ -2461,8 +2461,10 @@ static ssize_t __iommu_map_sg(struct iommu_domain *domain, unsigned long iova,
 		}
 
 		if (sg_is_dma_bus_address(sg))
+		{
+			printk("sg_is_dma_bus_address(sg) return true\n");
 			goto next;
-
+		}
 		if (len) {
 			len += sg->length;
 		} else {

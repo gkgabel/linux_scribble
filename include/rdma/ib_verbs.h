@@ -4010,6 +4010,9 @@ void ib_cq_pool_put(struct ib_cq *cq, unsigned int nr_cqe);
  */
 static inline bool ib_uses_virt_dma(struct ib_device *dev)
 {
+	//printk("IS_ENABLED(CONFIG_INFINIBAND_VIRT_DMA)= %d",IS_ENABLED(CONFIG_INFINIBAND_VIRT_DMA));
+	//if(dev->dma_device==NULL)
+	//printk("ib_uses_virt_dma might be false because dma_device is null\n");
 	return IS_ENABLED(CONFIG_INFINIBAND_VIRT_DMA) && !dev->dma_device;
 }
 
@@ -4108,7 +4111,11 @@ static inline int ib_dma_map_sg_attrs(struct ib_device *dev,
 				      unsigned long dma_attrs)
 {
 	if (ib_uses_virt_dma(dev))
+	{
+		printk("ib_uses_virt_dma is true\n");
 		return ib_dma_virt_map_sg(dev, sg, nents);
+	}
+	printk("ib_uses_virt_dma is false\n");
 	return dma_map_sg_attrs(dev->dma_device, sg, nents, direction,
 				dma_attrs);
 }
@@ -4144,6 +4151,7 @@ static inline int ib_dma_map_sgtable_attrs(struct ib_device *dev,
 		sgt->nents = nents;
 		return 0;
 	}
+	printk("ib_uses_virt_dma is false\n");
 	return dma_map_sgtable(dev->dma_device, sgt, direction, dma_attrs);
 }
 

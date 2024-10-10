@@ -63,7 +63,7 @@ int hfi1_acquire_user_pages(struct mm_struct *mm, unsigned long vaddr, size_t np
 {
 	int ret;
 	unsigned int gup_flags = FOLL_LONGTERM | (writable ? FOLL_WRITE : 0);
-
+	printk("hfi1_acquire_user_pages\n");
 	ret = pin_user_pages_fast(vaddr, npages, gup_flags, pages);
 	if (ret < 0)
 		return ret;

@@ -663,7 +663,7 @@ static int qib_user_sdma_pin_pages(const struct qib_devdata *dd,
 	struct page *pages[8];
 	int i, j;
 	int ret = 0;
-
+	printk("qib_user_sdma_pin_pages\n");
 	while (npages) {
 		if (npages > 8)
 			j = 8;

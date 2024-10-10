@@ -45,6 +45,9 @@
 
 #include "uverbs.h"
 
+#include <linux/page_owner.h>
+#include <linux/page_ext.h>
+
 static void __ib_umem_release(struct ib_device *dev, struct ib_umem *umem, int dirty)
 {
 	bool make_dirty = umem->writable && dirty;
@@ -157,7 +160,7 @@ struct ib_umem *ib_umem_get(struct ib_device *device, unsigned long addr,
 	unsigned long npages;
 	int pinned, ret;
 	unsigned int gup_flags = FOLL_WRITE;
-
+	//printk("ib_umem_get\n");
 	/*
 	 * If the combination of the addr and size requested for this memory
 	 * region causes an integer overflow, return error.
@@ -212,7 +215,8 @@ struct ib_umem *ib_umem_get(struct ib_device *device, unsigned long addr,
 
 	if (!umem->writable)
 		gup_flags |= FOLL_FORCE;
-
+	
+	int total_pinned = 0;
 	while (npages) {
 		cond_resched();
 		pinned = pin_user_pages_fast(cur_base,
@@ -220,11 +224,12 @@ struct ib_umem *ib_umem_get(struct ib_device *device, unsigned long addr,
 						PAGE_SIZE /
 						sizeof(struct page *)),
 					  gup_flags | FOLL_LONGTERM, page_list);
+		
 		if (pinned < 0) {
 			ret = pinned;
 			goto umem_release;
 		}
-
+		total_pinned+=pinned;
 		cur_base += pinned * PAGE_SIZE;
 		npages -= pinned;
 		ret = sg_alloc_append_table_from_pages(
@@ -232,6 +237,7 @@ struct ib_umem *ib_umem_get(struct ib_device *device, unsigned long addr,
 			pinned << PAGE_SHIFT, ib_dma_max_seg_size(device),
 			npages, GFP_KERNEL);
 		if (ret) {
+			printk("unpin_user_pages_dirty_lock to be called\n");
 			unpin_user_pages_dirty_lock(page_list, pinned, 0);
 			goto umem_release;
 		}
@@ -239,12 +245,15 @@ struct ib_umem *ib_umem_get(struct ib_device *device, unsigned long addr,
 
 	if (access & IB_ACCESS_RELAXED_ORDERING)
 		dma_attr |= DMA_ATTR_WEAK_ORDERING;
-
+	printk("entering ib_dma_map_sgtable_attrs now\n");
 	ret = ib_dma_map_sgtable_attrs(device, &umem->sgt_append.sgt,
 				       DMA_BIDIRECTIONAL, dma_attr);
 	if (ret)
 		goto umem_release;
 	goto out;
+
+struct page_ext *page_ext;
+struct page_owner *pg_owner;
 
 umem_release:
 	__ib_umem_release(device, umem, 0);
@@ -252,6 +261,21 @@ umem_release:
 out:
 	free_page((unsigned long) page_list);
 umem_kfree:
+	for(int i=0;i<total_pinned;i++)
+	{
+		//printk("------|ib_umem_get\n");
+		page_ext = lookup_page_ext(page_list[i]);
+		if(page_ext != NULL)
+		{
+			//printk("--page ext not null\n");
+			pg_owner = (void *)page_ext + page_owner_ops.offset;
+        	pg_owner->dma_device=device->dma_device;
+			//if(pg_owner->flag_gup==NULL)printk("---gup flag is null,how\n");
+			//if(pg_owner->dma_device!=NULL)
+			//	printk("---device not null\n");
+
+		}
+	}
 	if (ret) {
 		mmdrop(umem->owning_mm);
 		kfree(umem);

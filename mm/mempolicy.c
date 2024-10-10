@@ -2262,16 +2262,26 @@ struct page *alloc_pages(gfp_t gfp, unsigned order)
 	 * No reference counting needed for current->mempolicy
 	 * nor system default_policy
 	 */
+	// printk("line 2265---");
 	if (pol->mode == MPOL_INTERLEAVE)
+	{
+		//printk("line 2268---");
 		page = alloc_page_interleave(gfp, order, interleave_nodes(pol));
+	}
 	else if (pol->mode == MPOL_PREFERRED_MANY)
+	{
+		//printk("line 2273---");
 		page = alloc_pages_preferred_many(gfp, order,
 				  policy_node(gfp, pol, numa_node_id()), pol);
+	}
 	else
+	{
+		//printk("line 2279---");
 		page = __alloc_pages(gfp, order,
 				policy_node(gfp, pol, numa_node_id()),
 				policy_nodemask(gfp, pol));
 
+	}
 	return page;
 }
 EXPORT_SYMBOL(alloc_pages);
