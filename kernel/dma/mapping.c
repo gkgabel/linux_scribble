@@ -191,7 +191,7 @@ static int __dma_map_sg_attrs(struct device *dev, struct scatterlist *sg,
 	if (dma_map_direct(dev, ops) ||
 	    arch_dma_map_sg_direct(dev, sg, nents))
 		{
-			printk("dma map direct works here\n");
+			//printk("dma map direct works here\n");
 		ents = dma_direct_map_sg(dev, sg, nents, dir, attrs);
 		}
 	else

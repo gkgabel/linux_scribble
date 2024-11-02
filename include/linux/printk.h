@@ -11,6 +11,8 @@
 
 extern const char linux_banner[];
 extern const char linux_proc_banner[];
+//just for testing introduced a flag for custom printong
+extern int custom_printk_flag;
 
 extern int oops_in_progress;	/* If set, an oops, panic(), BUG() or die() is in progress */
 

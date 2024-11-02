@@ -375,6 +375,8 @@ static inline struct page *pfn_swap_entry_to_page(swp_entry_t entry)
 	 * Any use of migration entries may only occur while the
 	 * corresponding page is locked
 	 */
+	if(is_migration_entry(entry) && !PageLocked(p))
+		printk("Page is not locked but it is a migration entry the pfn is %lu\n",swp_offset(entry));
 	BUG_ON(is_migration_entry(entry) && !PageLocked(p));
 
 	return p;

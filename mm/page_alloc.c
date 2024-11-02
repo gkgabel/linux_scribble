@@ -83,6 +83,8 @@
 #include "page_reporting.h"
 #include "swap.h"
 
+int custom_printk_flag = -1;
+
 /* Free Page Internal flags: for internal, non-pcp variants of free_pages(). */
 typedef int __bitwise fpi_t;
 
@@ -3745,7 +3747,8 @@ struct page *__rmqueue_pcplist(struct zone *zone, unsigned int order,
 			struct list_head *list)
 {
 	struct page *page;
-
+	if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "page_alloc.c:entered rmqueue_pcplist");
 	do {
 		if (list_empty(list)) {
 			int batch = READ_ONCE(pcp->batch);
@@ -3760,17 +3763,36 @@ struct page *__rmqueue_pcplist(struct zone *zone, unsigned int order,
 			 */
 			if (batch > 1)
 				batch = max(batch >> order, 2);
+			if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "page_alloc.c:line 3767");
 			alloced = rmqueue_bulk(zone, order,
 					batch, list,
 					migratetype, alloc_flags);
-
+			if(custom_printk_flag==get_current()->pid)
+				printk(KERN_INFO "page_alloc.c:line 3772");
 			pcp->count += alloced << order;
 			if (unlikely(list_empty(list)))
 				return NULL;
 		}
-
+		if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "page_alloc.c:line 3778");
 		page = list_first_entry(list, struct page, pcp_list);
-		list_del(&page->pcp_list);
+		if(get_current()!=NULL)
+		{
+			if(custom_printk_flag==get_current()->pid)
+				printk("new page obtained from pcp list: %lu",page_to_pfn(page));
+		}
+		/**
+		 * ---HACK---
+		 * This condition must be removed. one has to delete from the list
+		 */
+		//if(custom_printk_flag!=get_current()->pid)
+			list_del(&page->pcp_list);
+		if(get_current()!=NULL)
+		{
+			if(custom_printk_flag==get_current()->pid)
+				printk(KERN_INFO "page_alloc.c:line 3782");
+		}
 		pcp->count -= 1 << order;
 	} while (check_new_pcp(page, order));
 
@@ -3788,7 +3810,8 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
 	struct page *page;
 	unsigned long flags;
 	unsigned long __maybe_unused UP_flags;
-
+	if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "page_alloc.c:entered rmqueue_pcplist");
 	/*
 	 * spin_trylock may fail due to a parallel drain. In the future, the
 	 * trylock will also protect against IRQ reentrancy.
@@ -3807,6 +3830,8 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
 	 */
 	pcp->free_factor >>= 1;
 	list = &pcp->lists[order_to_pindex(migratetype, order)];
+	if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "page_alloc.c:line 3814");
 	page = __rmqueue_pcplist(zone, order, migratetype, alloc_flags, pcp, list);
 	pcp_spin_unlock_irqrestore(pcp, flags);
 	pcp_trylock_finish(UP_flags);
@@ -3833,12 +3858,15 @@ struct page *rmqueue(struct zone *preferred_zone,
 	 * allocate greater than order-1 page units with __GFP_NOFAIL.
 	 */
 	WARN_ON_ONCE((gfp_flags & __GFP_NOFAIL) && (order > 1));
-
+	if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist try_this_zone\n");
 	if (likely(pcp_allowed_order(order))) {
 		/*
 		 * MIGRATE_MOVABLE pcplist could have the pages on CMA area and
 		 * we need to skip it when CMA area isn't allowed.
 		 */
+		if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist try_this_zone\n");
 		if (!IS_ENABLED(CONFIG_CMA) || alloc_flags & ALLOC_CMA ||
 				migratetype != MIGRATE_MOVABLE) {
 			page = rmqueue_pcplist(preferred_zone, zone, order,
@@ -3847,17 +3875,22 @@ struct page *rmqueue(struct zone *preferred_zone,
 				goto out;
 		}
 	}
-
+	if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist try_this_zone\n");
 	page = rmqueue_buddy(preferred_zone, zone, order, alloc_flags,
 							migratetype);
 
 out:
+	if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist try_this_zone\n");
 	/* Separate test+clear to avoid unnecessary atomics */
 	if (unlikely(test_bit(ZONE_BOOSTED_WATERMARK, &zone->flags))) {
 		clear_bit(ZONE_BOOSTED_WATERMARK, &zone->flags);
 		wakeup_kswapd(zone, 0, 0, zone_idx(zone));
 	}
 
+	if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist try_this_zone\n");
 	VM_BUG_ON_PAGE(page && bad_range(zone, page), page);
 	return page;
 }
@@ -4177,7 +4210,7 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
 	struct pglist_data *last_pgdat = NULL;
 	bool last_pgdat_dirty_ok = false;
 	bool no_fallback;
-	printk("get_page_from_freelist");
+	//printk("get_page_from_freelist");
 retry:
 	/*
 	 * Scan zonelist, looking for a zone with enough free.
@@ -4185,11 +4218,15 @@ retry:
 	 */
 	no_fallback = alloc_flags & ALLOC_NOFRAGMENT;
 	z = ac->preferred_zoneref;
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist\n");
 	for_next_zone_zonelist_nodemask(zone, z, ac->highest_zoneidx,
 					ac->nodemask) {
 		struct page *page;
 		unsigned long mark;
 
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist for_next_zone_zonelist_nodemask\n");
 		if (cpusets_enabled() &&
 			(alloc_flags & ALLOC_CPUSET) &&
 			!__cpuset_zone_allowed(zone, gfp_mask))
@@ -4213,6 +4250,8 @@ retry:
 		 * will require awareness of nodes in the
 		 * dirty-throttling and the flusher threads.
 		 */
+		if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist before spread_dirty_pages\n");
 		if (ac->spread_dirty_pages) {
 			if (last_pgdat != zone->zone_pgdat) {
 				last_pgdat = zone->zone_pgdat;
@@ -4238,7 +4277,8 @@ retry:
 				goto retry;
 			}
 		}
-
+		if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist before zone_watermark_fast\n");
 		mark = wmark_pages(zone, alloc_flags & ALLOC_WMARK_MASK);
 		if (!zone_watermark_fast(zone, order, mark,
 				       ac->highest_zoneidx, alloc_flags,
@@ -4264,6 +4304,8 @@ retry:
 			    !zone_allows_reclaim(ac->preferred_zoneref->zone, zone))
 				continue;
 
+			if(custom_printk_flag==get_current()->pid)
+				printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist before node_reclaim\n");
 			ret = node_reclaim(zone->zone_pgdat, gfp_mask, order);
 			switch (ret) {
 			case NODE_RECLAIM_NOSCAN:
@@ -4280,14 +4322,21 @@ retry:
 
 				continue;
 			}
+			if(custom_printk_flag==get_current()->pid)
+				printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist after node_reclaim\n");
 		}
 
 try_this_zone:
+		if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist try_this_zone\n");
 		page = rmqueue(ac->preferred_zoneref->zone, zone, order,
 				gfp_mask, alloc_flags, ac->migratetype);
+		if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist after rmqueue\n");
 		if (page) {
 			prep_new_page(page, order, gfp_mask, alloc_flags);
-
+			if(custom_printk_flag==get_current()->pid)
+				printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist success\n");
 			/*
 			 * If this is a high-order atomic allocation then check
 			 * if the pageblock should be reserved for the future
@@ -4307,6 +4356,8 @@ try_this_zone:
 		}
 	}
 
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "page_alloc.c:entered get_page_from_freelist failed\n");
 	/*
 	 * It's possible on a UMA machine to get through all zones that are
 	 * fragmented. If avoiding fragmentation, reset and try again.
@@ -4315,7 +4366,6 @@ try_this_zone:
 		alloc_flags &= ~ALLOC_NOFRAGMENT;
 		goto retry;
 	}
-	//printk("get_page_from_freelist failed");
 	return NULL;
 }
 
@@ -5523,7 +5573,10 @@ struct page *__alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 	unsigned int alloc_flags = ALLOC_WMARK_LOW;
 	gfp_t alloc_gfp; /* The gfp_t that was actually used for allocation */
 	struct alloc_context ac = { };
-
+	if(custom_printk_flag==get_current()->pid)
+	{
+		printk(KERN_INFO "Entering __alloc_pages\n");
+	}
 	/*
 	 * There are several places where we assume that the order value is sane
 	 * so bail out early if the request is out of bound.
@@ -5541,6 +5594,8 @@ struct page *__alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 	 */
 	gfp = current_gfp_context(gfp);
 	alloc_gfp = gfp;
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "page_alloc.c: __alloc_pages: prepare_alloc_pages\n");
 	if (!prepare_alloc_pages(gfp, order, preferred_nid, nodemask, &ac,
 			&alloc_gfp, &alloc_flags))
 		return NULL;
@@ -5551,6 +5606,8 @@ struct page *__alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 	 */
 	alloc_flags |= alloc_flags_nofragment(ac.preferred_zoneref->zone, gfp);
 
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "page_alloc.c: __alloc_pages: get_page_from_freelist\n");
 	/* First allocation attempt */
 	page = get_page_from_freelist(alloc_gfp, order, alloc_flags, &ac);
 	if (likely(page))
@@ -5565,6 +5622,8 @@ struct page *__alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 	 */
 	ac.nodemask = nodemask;
 
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "page_alloc.c: __alloc_pages: __alloc_pages_slowpath\n");
 	page = __alloc_pages_slowpath(alloc_gfp, order, &ac);
 
 out:
