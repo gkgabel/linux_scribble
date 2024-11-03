@@ -474,6 +474,10 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 				/**
 				 * instead of decrementing refcount of src page, we use put_page(), if refcount becomes 0 it automaticlly frees them
 				*/
+				printk("src refcount and mapcount on success before put_page %d %d\n",atomic_read(&src->_refcount),atomic_read(&src->_mapcount));
+
+				put_page(src);
+				put_page(dst);
 				put_page(src);
 				//atomic_dec(&src->_refcount);
 				printk("src refcount and mapcount on success %d %d\n",atomic_read(&src->_refcount),atomic_read(&src->_mapcount));
@@ -501,7 +505,9 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 				unlock_page(dst);
 				printk("line 391-----");
 				//instead of decrementing ref count doing put page to do the same
+				put_page(dst);
 				put_page(src);
+				put_page(dst);
 				//atomic_dec(&src->_refcount);
 				printk("src refcount and mapcount on failure %d %d\n",atomic_read(&src->_refcount),atomic_read(&src->_mapcount));
 				printk("dst refcount and mapcount on failure %d %d\n",atomic_read(&dst->_refcount),atomic_read(&dst->_mapcount));
