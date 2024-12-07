@@ -6,7 +6,9 @@
 #include <linux/page_ext.h>
 #include <linux/pagemap.h>
 #include <../drivers/iommu/intel/iommu.h>
-
+#include <linux/mm.h>
+#include <linux/delay.h>
+#include "../mm/internal.h"
 /**
  * UPDATED: OCT 26,2024
  * This file defines a system call to migrate pinned pages and update the IOVA 
@@ -25,6 +27,7 @@
  * other fields added to page_owner struct to store the iommu_domain and iov_pfn
  */
 
+#define ENABLE_DEVICE_PAGE_MIGRATION 1
 /**
  * Translates a virtual address to a page table entry (PTE).
  *
@@ -62,35 +65,6 @@ pte_t *va_to_pte(struct mm_struct *mm,unsigned long vpage)
 	return pte;
 }
 
-/**
- * Check if a page is pinned using the flag in the page_ext. If pinned, update 
- * the address of its struct page_owner.
- * @param pg Pointer to the struct page of the page to check.
- * @param pg_owner Address of a pointer to store the struct page_owner of the
- * 			   pinned page.
- */
-
-bool is_page_pinned(struct page *pg,struct page_owner **pg_owner)
-{
-	struct page_ext *page_ext;
-    struct page_owner *temp;
-	page_ext = lookup_page_ext(pg);
-
-	if(page_ext==NULL)
-	{
-		printk(KERN_WARNING "Page extension is null for struct page * = %lu\n",
-				(unsigned long)pg);
-		return false;
-	}
-	temp = (void *)page_ext + page_owner_ops.offset;
-
-	if(temp->flag_gup == 0)
-		return false;
-
-	*pg_owner=temp;
-	return true;
-}
-
 void print_page_info(struct page *pg)
 {
 	struct anon_vma *anon_vma;
@@ -110,6 +84,34 @@ void print_page_info(struct page *pg)
 		page_unlock_anon_vma_read(anon_vma);
 	}
 	printk(KERN_INFO "PFN %lu mapped %u times=\n",pfn,n);
+}
+
+#if ENABLE_DEVICE_PAGE_MIGRATION
+/**
+ * Check if a page is pinned using the flag in the page_ext. If pinned, update 
+ * the address of its struct page_owner.
+ * @param pg Pointer to the struct page of the page to check.
+ * @param pg_owner Address of a pointer to store the struct page_owner of the
+ * 			   pinned page.
+ */
+bool is_page_pinned(struct page *pg,struct page_owner **pg_owner){
+	struct page_ext *page_ext;
+    struct page_owner *temp;
+	page_ext = lookup_page_ext(pg);
+
+	if(page_ext==NULL)
+	{
+		printk(KERN_WARNING "Page extension is null for struct page * = %lu\n",
+				(unsigned long)pg);
+		return false;
+	}
+	temp = (void *)page_ext + page_owner_ops.offset;
+
+	if(temp->flag_gup == 0)
+		return false;
+
+	*pg_owner=temp;
+	return true;
 }
 
 /**
@@ -141,6 +143,7 @@ struct dma_pte *find_page_iova_pte(struct page *pg)
 	//printk("--------dma pte------%llu\n",dma_pte->val);
 	return dma_pte;
 }
+#endif
 
 /**
  * Core of the silent migration system call.
@@ -160,6 +163,7 @@ int migrate_and_update_iova_mapping(struct dma_pte *dma_pte,
 									struct page_owner *pg_owner, 
 									struct page *dst,struct page *src)
 {	
+#if ENABLE_DEVICE_PAGE_MIGRATION
 	struct intel_iommu *iommu;
 	u8 bus, devfn;
 	u64 clr_access_mask = ~(1ULL << DMA_FL_PTE_ACCESS);
@@ -227,7 +231,7 @@ int migrate_and_update_iova_mapping(struct dma_pte *dma_pte,
 				"no migration, returning\n");
 		return 0;
 	}
-	
+#endif
 			
 	/**
 	 * Pinned Page Migration Step 3: Copy
@@ -250,6 +254,8 @@ int migrate_and_update_iova_mapping(struct dma_pte *dma_pte,
 	//atomic_inc(&dst->_refcount);
 	printk("updated mapcount and refcount of dst page %d %d\n",
 			atomic_read(&dst->_mapcount),atomic_read(&dst->_refcount));
+
+#if ENABLE_DEVICE_PAGE_MIGRATION
 	page_ref_add(dst, GUP_PIN_COUNTING_BIAS);
 	printk(KERN_INFO "updating pte with new pfn based on condition");
 	cmpxchg(&(dma_pte->val), dma_pte_access_unset.val, dma_pte_new.val);
@@ -266,6 +272,10 @@ int migrate_and_update_iova_mapping(struct dma_pte *dma_pte,
 		//atomic_dec(&src->_mapcount);
 	}
 	return 1;
+
+#else
+	return 1;
+#endif
 }
 
 /**
@@ -302,10 +312,8 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 		 * Remember sometimes applications can pin pages that are mapped to a 
 		 * virtual file. So, it is better to keep this commented.
 		 */
-		/*
-		if(!vma_is_anonymous(vmi))
-			continue;
-		*/
+		//if(!vma_is_anonymous(vmi))
+		//	continue;
 
 		/**
 		 * Uncomment this if only stack pages are to be skipped
@@ -319,15 +327,18 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 		for( vpage = vmi->vm_start ; vpage < vmi->vm_end ; vpage += 4096 )
 		{	
 			//char *vaddr_src, *vaddr_dst;
-			pte_t *pte;
+			pte_t *pte, temp_pte_val;
 			struct page *src, *dst;
 			struct page_owner *pg_owner;
 			struct address_space *mapping;
 			struct dma_pte *dma_pte;
+			swp_entry_t swap_entry;
+			struct migration_target_control mtc;
+
 
 			//printk(KERN_INFO "vpage addr = %lu\n", vpage);
 			pte = va_to_pte(mm,vpage);
-			
+			temp_pte_val = *pte;
 			if(pte==NULL)
 				continue;
 
@@ -357,6 +368,7 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 			if(PagePrivate(src))
 				continue;
 
+#if ENABLE_DEVICE_PAGE_MIGRATION
 			if(!is_page_pinned(src,&pg_owner))
 			{
 				//printk(KERN_INFO "Skipping a unpinned page\n");
@@ -379,17 +391,67 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 				printk(KERN_WARNING "DMA Pte is NUll for the pinned page\n");
 				continue;
 			}
+#endif
+			printk(KERN_INFO "pte = %lu\n", pte->pte);
+			print_page_info(src);
+			//mapping = folio_mapping(page_folio(src)); //this does not give the mapping of the page that is anon, it return s nULL IF PAGE FLAG ANON OR MAVABLE IS SET
+			mapping = page_folio(src)->mapping; //use this instead of first
+			if(mapping == NULL)
+			{
+				printk(KERN_WARNING "Mapping is NULL for the src page\n");
+			}
+			if (folio_test_anon(page_folio(src))) {
+				printk(KERN_INFO "src folio is an anonymous folio\n");
+			}
+			else
+			{
+				printk(KERN_INFO "src folio is not an anonymous folio\n");
+			}
 			printk("line 319-----");
 			//custom_printk_flag = 1; //this flag is for custom printk sometimes used in kernel, remove it after debugging
 			
 			//Here since we are working with user space pages we should not use GFP_KERNEL flag
 			//dst = alloc_page(GFP_KERNEL);
-			dst = alloc_page(GFP_HIGHUSER_MOVABLE);
+			//rater than this, using something directlyfrom migration because we need to copy source permissions and prpertyires for fiolios also which is a cause of error cuurently
+			//dst = alloc_page(GFP_HIGHUSER_MOVABLE);
+			//so this one i am using
+			//this migration_target_control , i copied from gup.c . i thought it will relevant to pinning but the it still shows dst as non anon page
+			mtc.nid = NUMA_NO_NODE;
+			mtc.gfp_mask = GFP_HIGHUSER_MOVABLE; //HIGHUSER MOVABLE MIGHT NOT BE THE RIGHT FLAG FOR PINN PAGES SEE THE DOCUMENTATIONit points out the issue
+			dst = alloc_migration_target(src, (unsigned long)&mtc);
+			/**
+			 * BIG PROBLEMA HERE FOR DIFF CASES DUE TO REF COUNT CONDITION INSIDE
+			 * SIMPLY DOING ANON PAGE IF CONDITON HERE FROM THE FUNCTION
+			 * folio_migrate_mapping();
+			 **/
+			page_folio(dst)->mapping = page_folio(src)->mapping;
+			page_folio(dst)->index = page_folio(src)->index;
+			//this line's purpose is not not known to me just copied
+			if (folio_test_swapbacked(page_folio(src)))
+				__folio_set_swapbacked(page_folio(dst));
+			
+
 			printk("mapcount and refcount of dst page %d %d\n",
 					atomic_read(&dst->_mapcount),atomic_read(&dst->_refcount));
 			//custom_printk_flag = 0; //this flag is for custom printk sometimes used in kernel, remove it after debugging
 			printk("line 321-----");
-			mapping = folio_mapping(page_folio(src));
+			//mapping = folio_mapping(page_folio(src)); //don't use this. rets null for anon
+			mapping = page_folio(src)->mapping;
+			if(mapping == NULL)
+			{
+				printk(KERN_WARNING "Mapping is NULL for the src page\n");
+			}
+			if(page_folio(dst)->mapping == NULL)
+			{
+				printk(KERN_WARNING "Mapping is NULL for the dst page\n");
+			}
+			if (folio_test_anon(page_folio(dst))) {
+				printk(KERN_INFO "dst is an anonymous folio\n");
+			}
+			else
+			{
+				printk(KERN_INFO "dst is not an anonymous folio\n");
+			}
 			printk("line 323-----");
 			
 			/*
@@ -420,6 +482,8 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 				continue;
 			}
 			printk("line 352-----");
+			//printk("going to sleep for 5 seconds at line 442\n");
+			//msleep(10000);
 			if (!trylock_page(src)) {
 				printk(KERN_INFO "Page has not been locked so we attempt to get a lock\n");
 				lock_page(src);
@@ -434,12 +498,16 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 					continue;
 				}
 			}
+			//printk("going to sleep for 5 seconds at line 458\n");
+			//msleep(10000);
 			/**
 			 * Do we need to lock the destination page. I have only done this because at the current moment 
 			 * while writing this, I have been getting error related to PageLocked() being false for a migration entry
 			 * but it was of now use. I am still keepng it here because when removing the migration ptes 
 			 * I saw that the pages involved are unlocked later
 			 */
+			//printk("going to sleep for 5 seconds at line 466\n");
+			//msleep(10000);
 			if (!trylock_page(dst)) {
 				printk(KERN_INFO "dst Page has not been locked so we attempt to get a lock\n");
 				lock_page(dst);
@@ -455,21 +523,87 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 				}
 			}
 			printk("line 362-----");
+			if(page_mapped(src))
+			{
+				printk(KERN_WARNING "Page is mapped to user space\n");
+			}
+			//printk("going to sleep for 5 seconds at line 495 before making migration ptes\n");
+			//msleep(10000);
 			/*
 			Lock acquired so try to block user va access
 			*/
+			printk("src refcount and mapcount  %d %d\n",atomic_read(&src->_refcount),atomic_read(&src->_mapcount));
 			try_to_migrate(page_folio(src), 0);
+			printk("src refcount and mapcount  %d %d\n",atomic_read(&src->_refcount),atomic_read(&src->_mapcount));
 			/*--------------------------------------------------------------------------------------------------*/
+			swap_entry=pte_to_swp_entry(*pte);
+			if(is_migration_entry(swap_entry))
+			{
+				printk(KERN_WARNING "Migration entry found in src PTE\n");			
+			}
 			printk("line 368");
-
+			//printk("going to sleep for 5 seconds at line 497 after making migration ptes\n");
+			//msleep(10000);
 			if(migrate_and_update_iova_mapping(dma_pte,pg_owner,dst,src))
 			{
+				swap_entry=pte_to_swp_entry(*pte);
+				if(is_migration_entry(swap_entry))
+				{
+					printk(KERN_WARNING "Migration entry found in dst PTE\n");
+					printk(" page in migration pte %lu actual dest page we want %lu",swp_offset(swap_entry),page_to_pfn(dst));			
+
+				}
+				//printk("going to sleep for 5 seconds at line 501 after folio migration\n");
+				//msleep(10000);
+				pte_t pte_new;
+				unsigned long pte_flag;
+				if(va_to_pte(mm,vpage)->pte==temp_pte_val.pte)
+				{
+					printk(KERN_WARNING "migration pte is unchanged from normal pte\n");
+				}
+				printk("line 485-----");
+				if(src==pte_page(*va_to_pte(mm,vpage)))
+				{
+					printk(KERN_WARNING "src page is same as page in migration pte\n");
+				}
+				else if(va_to_pte(mm,vpage)==NULL)
+				{
+					printk(KERN_WARNING "page in migration pte is NULL\n");
+				}
+				printk("line 490-----");
+				pte = va_to_pte(mm,vpage);
+				pte_flag = pte_flags(*pte);
+				printk("line 493-----");
+				//below code is not right if it is needed because remove mogration pte should do the job
+				// not right because migration pte and swap entry pte offset are/can be different
+				//pte_new.pte = pte_flag | (page_to_pfn(dst) << PAGE_SHIFT);
+				//pte->pte = pte_new.pte;
 				/*-------------Part of user page blocking for facilitating iova mapping change.-------------------*/
 				printk("line 372-----");
+				//printk("going to sleep for 5 seconds at line 522 before removing migration ptes\n");
+				//msleep(100000);
 				remove_migration_ptes(page_folio(src),page_folio(dst),false);
+				swap_entry=pte_to_swp_entry(*pte);
+				if(is_migration_entry(swap_entry))
+				{
+					printk(KERN_WARNING "Migration entry found in dst PTE\n");
+					printk(" converting to page if it is migration pte %lu actual dest page we want %lu",swp_offset(swap_entry),page_to_pfn(dst));			
+				}
+				printk("new page number after page walk and dest page number and pte contained page number %lu %lu %lu\n",page_to_pfn(pte_page(*va_to_pte(mm,vpage))),page_to_pfn(dst),page_to_pfn(pte_page(*pte)));
+				if(va_to_pte(mm,vpage)->pte==temp_pte_val.pte)
+				{
+					printk(KERN_WARNING "PTE is unchanged after migration\n");
+					printk(KERN_WARNING "--------------------------");
+				}
 				printk("line 374-----");
+				printk("going to sleep for 5 seconds at line 531 before  unlocking pages\n");
+				//msleep(100000);
 				unlock_page(src);
+				printk("going to sleep for 5 seconds at line 534 after runlocking src ptes\n");
+				//msleep(100000);
 				unlock_page(dst);
+				printk("going to sleep for 5 seconds at line 535 after runlocking all ptes\n");
+				//msleep(100000);
 				printk("line 376-----");
 				/**
 				 * instead of decrementing refcount of src page, we use put_page(), if refcount becomes 0 it automaticlly frees them
@@ -491,7 +625,9 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 				printk("line 378----");
 				/*--------------------------------------------------------------------------------------------------*/
 				success++;
+#if ENABLE_DEVICE_PAGE_MIGRATION
 				printk(KERN_INFO "iov pfn %lu remapped to phys pfn %lu in device %lu",pg_owner->iov_pfn,page_to_pfn(dst),(unsigned long)pg_owner->dma_device);
+#endif				
 				print_page_info(dst);
 			}
 			else
@@ -613,6 +749,6 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 		//printk("line 92\n");
 	}
 	printk(KERN_INFO "Number of Total & Successful & Aborted Attempts & Mismatch Contents= %lu %lu %lu %lu\n",success+abort,success,abort,mismatch);
-	custom_printk_flag = -1;
+	custom_printk_flag = pid;
 	return 0;
 }
