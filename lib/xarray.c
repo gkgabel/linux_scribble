@@ -233,7 +233,7 @@ static void *xas_descend(struct xa_state *xas, struct xa_node *node)
 void *xas_load(struct xa_state *xas)
 {
 	void *entry = xas_start(xas);
-
+	if(custom_printk_flag==get_current()->pid) printk("xas_load\n");
 	while (xa_is_node(entry)) {
 		struct xa_node *node = xa_to_node(entry);
 
@@ -1239,7 +1239,8 @@ EXPORT_SYMBOL_GPL(__xas_next);
 void *xas_find(struct xa_state *xas, unsigned long max)
 {
 	void *entry;
-
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "xas_find\n");
 	if (xas_error(xas) || xas->xa_node == XAS_BOUNDS)
 		return NULL;
 	if (xas->xa_index > max)

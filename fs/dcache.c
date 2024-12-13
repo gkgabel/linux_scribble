@@ -398,7 +398,17 @@ static void dentry_unlink_inode(struct dentry * dentry)
 	if (dentry->d_op && dentry->d_op->d_iput)
 		dentry->d_op->d_iput(dentry, inode);
 	else
+	{
+		if(custom_printk_flag==get_current()->pid)
+		{
+			printk("iput called from dentry_unlink_inode\n");
+		}
 		iput(inode);
+		if(custom_printk_flag==get_current()->pid)
+		{
+			printk("iput completed from dentry_unlink_inode\n");
+		}
+	}
 }
 
 /*
@@ -581,7 +591,10 @@ static void __dentry_kill(struct dentry *dentry)
 	bool can_free = true;
 	if (!IS_ROOT(dentry))
 		parent = dentry->d_parent;
-
+	if(custom_printk_flag==get_current()->pid)
+	{
+		printk("__dentry_kill entered\n");
+	}
 	/*
 	 * The dentry is now unrecoverably dead to the world.
 	 */
@@ -604,7 +617,17 @@ static void __dentry_kill(struct dentry *dentry)
 	if (parent)
 		spin_unlock(&parent->d_lock);
 	if (dentry->d_inode)
+	{
+		if(custom_printk_flag==get_current()->pid)
+		{
+			printk("__dentry_kill calling dentry_unlink_inode line 613\n");
+		}
 		dentry_unlink_inode(dentry);
+		if(custom_printk_flag==get_current()->pid)
+		{
+			printk("__dentry_kill dentry_unlink_inode completed line 616\n");
+		}
+	}
 	else
 		spin_unlock(&dentry->d_lock);
 	this_cpu_dec(nr_dentry);
@@ -713,7 +736,10 @@ static struct dentry *dentry_kill(struct dentry *dentry)
 {
 	struct inode *inode = dentry->d_inode;
 	struct dentry *parent = NULL;
-
+	if(custom_printk_flag==get_current()->pid)
+	{
+		printk("dentry_kill entered\n");
+	}
 	if (inode && unlikely(!spin_trylock(&inode->i_lock)))
 		goto slow_positive;
 
@@ -744,6 +770,10 @@ got_locks:
 	} else if (likely(!retain_dentry(dentry))) {
 		__dentry_kill(dentry);
 		return parent;
+	}
+	if(custom_printk_flag==get_current()->pid)
+	{
+		printk("dentry_kill about to be exit\n");
 	}
 	/* we are keeping it, after all */
 	if (inode)
@@ -909,8 +939,16 @@ void dput(struct dentry *dentry)
 			spin_unlock(&dentry->d_lock);
 			return;
 		}
-
+		if(custom_printk_flag==get_current()->pid)
+		{
+			printk("dput: %s\n", dentry->d_name.name);
+			printk("in  dput calling dentry_kill line 915\n");
+		}
 		dentry = dentry_kill(dentry);
+		if(custom_printk_flag==get_current()->pid)
+		{
+			printk("in dput  dentry_kill returns line 920\n");
+		}
 	}
 }
 EXPORT_SYMBOL(dput);

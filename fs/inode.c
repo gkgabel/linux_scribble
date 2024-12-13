@@ -661,7 +661,15 @@ static void evict(struct inode *inode)
 	inode_wait_for_writeback(inode);
 
 	if (op->evict_inode) {
+		if(custom_printk_flag==get_current()->pid)
+		{
+			printk("op->evict_inode called from evict\n");
+		}
 		op->evict_inode(inode);
+		if(custom_printk_flag==get_current()->pid)
+		{
+			printk("op->evict_inode completed from evict\n");
+		}
 	} else {
 		truncate_inode_pages_final(&inode->i_data);
 		clear_inode(inode);
@@ -1743,8 +1751,11 @@ static void iput_final(struct inode *inode)
 	if (!list_empty(&inode->i_lru))
 		inode_lru_list_del(inode);
 	spin_unlock(&inode->i_lock);
-
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "iput_final calls evict_inode\n");
 	evict(inode);
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "iput_final completed evict_inode\n");
 }
 
 /**
@@ -1770,7 +1781,11 @@ retry:
 			mark_inode_dirty_sync(inode);
 			goto retry;
 		}
+		if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "iput calls iput_final\n");
 		iput_final(inode);
+		if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "iput completed iput_final\n");
 	}
 }
 EXPORT_SYMBOL(iput);

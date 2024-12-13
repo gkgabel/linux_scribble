@@ -133,6 +133,13 @@ task_work_cancel(struct task_struct *task, task_work_func_t func)
 	return task_work_cancel_match(task, task_work_func_match, func);
 }
 
+void dummy_function_task_work(void)
+{
+	printk("dummy function setting breakpoint");
+	int x=0;
+	while(x<10000)x++;
+	printk("%d",x);
+}
 /**
  * task_work_run - execute the works added by task_work_add()
  *
@@ -145,7 +152,11 @@ void task_work_run(void)
 {
 	struct task_struct *task = current;
 	struct callback_head *work, *head, *next;
-
+	if(custom_printk_flag==get_current()->pid)
+	{
+		printk(KERN_INFO "task_work_run called\n");
+		dummy_function_task_work();
+	}
 	for (;;) {
 		/*
 		 * work->func() can do task_work_add(), do not set
@@ -171,12 +182,27 @@ void task_work_run(void)
 		 */
 		raw_spin_lock_irq(&task->pi_lock);
 		raw_spin_unlock_irq(&task->pi_lock);
-
+		if(custom_printk_flag==get_current()->pid)
+		{
+			printk(KERN_INFO "task_work_run line 179\n");	
+		}
 		do {
 			next = work->next;
+			if(custom_printk_flag==get_current()->pid)
+			{
+				printk(KERN_INFO "task_work_run line 185\n");	
+			}
 			work->func(work);
 			work = next;
 			cond_resched();
 		} while (work);
+		if(custom_printk_flag==get_current()->pid)
+		{
+			printk(KERN_INFO "task_work_run line 193\n");
+		}
+	}
+	if(custom_printk_flag==get_current()->pid)
+	{
+		printk(KERN_INFO "task_work_run line 193\n");
 	}
 }

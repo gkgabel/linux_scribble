@@ -2002,7 +2002,10 @@ static inline struct folio *find_get_entry(struct xa_state *xas, pgoff_t max,
 		xa_mark_t mark)
 {
 	struct folio *folio;
-
+if(custom_printk_flag==get_current()->pid)
+{	
+	printk("find_get_entry\n");
+}
 retry:
 	if (mark == XA_PRESENT)
 		folio = xas_find(xas, max);
@@ -2010,7 +2013,13 @@ retry:
 		folio = xas_find_marked(xas, max, mark);
 
 	if (xas_retry(xas, folio))
+	{
+		if(custom_printk_flag==get_current()->pid)
+		{	
+			printk("xas_retry\n");
+		}
 		goto retry;
+	}
 	/*
 	 * A shadow entry of a recently evicted page, a swap
 	 * entry from shmem/tmpfs or a DAX entry.  Return it
@@ -2095,7 +2104,10 @@ unsigned find_lock_entries(struct address_space *mapping, pgoff_t start,
 {
 	XA_STATE(xas, &mapping->i_pages, start);
 	struct folio *folio;
-
+	if(custom_printk_flag==get_current()->pid)
+	{
+		printk("find_lock_entries\n");
+	}
 	rcu_read_lock();
 	while ((folio = find_get_entry(&xas, end, XA_PRESENT))) {
 		if (!xa_is_value(folio)) {

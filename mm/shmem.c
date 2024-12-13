@@ -923,7 +923,8 @@ static void shmem_undo_range(struct inode *inode, loff_t lstart, loff_t lend,
 	long nr_swaps_freed = 0;
 	pgoff_t index;
 	int i;
-
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "shmem_undo_range start line 927\n");
 	if (lend == -1)
 		end = -1;	/* unsigned, so actually very big */
 
@@ -932,8 +933,12 @@ static void shmem_undo_range(struct inode *inode, loff_t lstart, loff_t lend,
 
 	folio_batch_init(&fbatch);
 	index = start;
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "shmem_undo_range start line 9936 find_lock_entries iterating\n");
 	while (index < end && find_lock_entries(mapping, index, end - 1,
 			&fbatch, indices)) {
+		if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "iterating on find_lock_entries\n");
 		for (i = 0; i < folio_batch_count(&fbatch); i++) {
 			folio = fbatch.folios[i];
 
@@ -957,6 +962,8 @@ static void shmem_undo_range(struct inode *inode, loff_t lstart, loff_t lend,
 		cond_resched();
 		index++;
 	}
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "shmem_undo_range start line 9959 find_lock_entries iterating completed\n");
 
 	/*
 	 * When undoing a failed fallocate, we want none of the partial folio
@@ -991,7 +998,8 @@ static void shmem_undo_range(struct inode *inode, loff_t lstart, loff_t lend,
 		folio_unlock(folio);
 		folio_put(folio);
 	}
-
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "shmem_undo_range line 1000 before label whole_folios\n");
 whole_folios:
 
 	index = start;
@@ -1043,6 +1051,8 @@ whole_folios:
 		folio_batch_release(&fbatch);
 		index++;
 	}
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "shmem_undo_range ends now line 1053\n");
 
 	spin_lock_irq(&info->lock);
 	info->swapped -= nr_swaps_freed;
@@ -1052,7 +1062,11 @@ whole_folios:
 
 void shmem_truncate_range(struct inode *inode, loff_t lstart, loff_t lend)
 {
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "shmem_truncate_range calling shmem_undo_range\n");
 	shmem_undo_range(inode, lstart, lend, false);
+	if(custom_printk_flag==get_current()->pid)
+		printk(KERN_INFO "shmem_truncate_range completed shmem_undo_range\n");
 	inode->i_ctime = inode->i_mtime = current_time(inode);
 }
 EXPORT_SYMBOL_GPL(shmem_truncate_range);
@@ -1150,7 +1164,11 @@ static void shmem_evict_inode(struct inode *inode)
 		shmem_unacct_size(info->flags, inode->i_size);
 		inode->i_size = 0;
 		mapping_set_exiting(inode->i_mapping);
+		if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "shmem_evict_inode calling shmem_truncate_range\n");
 		shmem_truncate_range(inode, 0, (loff_t)-1);
+		if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "shmem_evict_inode completed shmem_truncate_range\n");
 		if (!list_empty(&info->shrinklist)) {
 			spin_lock(&sbinfo->shrinklist_lock);
 			if (!list_empty(&info->shrinklist)) {

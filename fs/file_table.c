@@ -298,6 +298,10 @@ static void __fput(struct file *file)
 	struct inode *inode = file->f_inode;
 	fmode_t mode = file->f_mode;
 
+	if(custom_printk_flag==get_current()->pid)
+	{
+		printk("__fput entered\n");
+	}
 	if (unlikely(!(file->f_mode & FMODE_OPENED)))
 		goto out;
 
@@ -325,7 +329,15 @@ static void __fput(struct file *file)
 	fops_put(file->f_op);
 	put_pid(file->f_owner.pid);
 	put_file_access(file);
+	if(custom_printk_flag==get_current()->pid)
+	{
+		printk("__fput called dput line 334\n");
+	}
 	dput(dentry);
+	if(custom_printk_flag==get_current()->pid)
+	{
+		printk("__fput copleted pput line 339\n");
+	}
 	if (unlikely(mode & FMODE_NEED_UNMOUNT))
 		dissolve_on_fput(mnt);
 	mntput(mnt);
