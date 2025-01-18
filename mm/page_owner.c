@@ -166,7 +166,10 @@ static inline void __set_page_owner_handle(struct page_ext *page_ext,
         page_owner->flag_gup = 0;
 		page_owner->dma_device = NULL;
 		page_owner->iommu_domain = NULL;
+		page_owner->vfio_iommu = NULL;
+		page_owner->driver_ops = NULL;
 		//page_owner->iov_pfn=0;//DEFAULT VALUE IS WRONG BECAUSE ACTUALLY IOV_PFN CAN SOMETIMES BE 0
+		page_owner->phys_pfn=0;
 		page_ext = page_ext_next(page_ext);
 	}
 }

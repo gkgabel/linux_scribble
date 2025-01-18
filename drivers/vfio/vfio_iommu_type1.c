@@ -20,7 +20,7 @@
  * domains are PCI based as the IOMMU API is still centered around a
  * device/bus interface rather than a group interface.
  */
-
+//it is important that for a new page, we als0 copy the attributes of the old page's page ext structure
 #include <linux/compat.h>
 #include <linux/device.h>
 #include <linux/fs.h>
@@ -331,10 +331,9 @@ static struct vfio_pfn *vfio_find_vpfn(struct vfio_dma *dma, dma_addr_t iova)
 {
 	struct vfio_pfn *vpfn;
 	struct rb_node *node = dma->pfn_list.rb_node;
-
 	while (node) {
 		vpfn = rb_entry(node, struct vfio_pfn, node);
-
+		printk("iova vpfn %u",vpfn->iova);
 		if (iova < vpfn->iova)
 			node = node->rb_left;
 		else if (iova > vpfn->iova)
@@ -364,6 +363,7 @@ static void vfio_link_pfn(struct vfio_dma *dma,
 
 	rb_link_node(&new->node, parent, link);
 	rb_insert_color(&new->node, &dma->pfn_list);
+	if(dma->pfn_list.rb_node==NULL)printk("linking failed\n");
 }
 
 static void vfio_unlink_pfn(struct vfio_dma *dma, struct vfio_pfn *old)
@@ -383,6 +383,7 @@ static int vfio_add_to_pfn_list(struct vfio_dma *dma, dma_addr_t iova,
 	vpfn->iova = iova;
 	vpfn->pfn = pfn;
 	vpfn->ref_count = 1;
+	printk("linking and adding to pfn list: iova %u pfn %u\n",vpfn->iova,vpfn->pfn);
 	vfio_link_pfn(dma, vpfn);
 	return 0;
 }
@@ -1499,6 +1500,8 @@ static int vfio_iommu_map(struct vfio_iommu *iommu, dma_addr_t iova,
 	struct vfio_domain *d;
 	int ret;
 	//printk("------|vfio_iommu_map\n");
+	//if we observe, these pages will be pinned in all te domains belonging to vfio
+	//but we are pining only in the domain which is the last in the list
 	list_for_each_entry(d, &iommu->domain_list, next) {
 		//printk(" line 1501\n");
 		ret = iommu_map(d->domain, iova, (phys_addr_t)pfn << PAGE_SHIFT,
@@ -1516,7 +1519,11 @@ static int vfio_iommu_map(struct vfio_iommu *iommu, dma_addr_t iova,
 					printk("pg_owner is null\n");
 				//printk("line 1517\n");
 				if(pg_owner->flag_gup>0)
+				{
 					pg_owner->iommu_domain=d->domain;
+					pg_owner->vfio_iommu=iommu;
+					//pg_owner->driver_ops=vfio_iommu_driver_ops_type1;
+				}
 			}
 			//printk("line 1523\n");
 		}
@@ -3332,6 +3339,95 @@ static int __init vfio_iommu_type1_init(void)
 static void __exit vfio_iommu_type1_cleanup(void)
 {
 	vfio_unregister_iommu_driver(&vfio_iommu_driver_ops_type1);
+}
+
+
+static struct vfio_dma *vfio_find_dma_dup(struct vfio_iommu *iommu,
+				      dma_addr_t start, size_t size)
+{
+	struct rb_node *node = iommu->dma_list.rb_node;
+
+	while (node) {
+		struct vfio_dma *dma = rb_entry(node, struct vfio_dma, node);
+		printk("dma iova: %u dma size %u start %u",dma->iova,dma->size,start);
+		if (start + size <= dma->iova)
+			node = node->rb_left;
+		else if (start >= dma->iova + dma->size)
+			node = node->rb_right;
+		else
+			return dma;
+	}
+
+	return NULL;
+}
+
+/**
+ * Adding a function to change mapping in vfio iommu type1 driver after page changes 
+ * Needs a proper name and a lot of changes. it is a workaround since we cannpt access 
+ * driver functions without using the hooks provided. And hoks need iommu_group which 
+ * I donot know how to find
+*/
+void vfio_change_mapping(struct vfio_iommu *iommu, dma_addr_t iova, unsigned long src, unsigned long dst)
+{
+	struct vfio_dma *dma;
+	struct vfio_pfn *vpfn;
+	vpfn = kzalloc(sizeof(*vpfn), GFP_KERNEL);
+	
+	struct rb_node *node;
+
+	//node = rb_first(&iommu->dma_list);
+	//for (; node; node = rb_next(node)) 
+	//	printk("dma: %u",rb_entry(node, struct vfio_dma, node));
+	dma = vfio_find_dma_dup(iommu, iova, PAGE_SIZE);
+	if(!dma)
+	{
+		printk("no dma found for iova %lu",iova);
+		return;
+	}
+	vpfn = vfio_iova_get_vfio_pfn(dma, iova);
+	if(vpfn)
+	{
+		printk("a mapping for this iova with iova %lu pfn %lu expected src pfn %lu",iova,vpfn->pfn,src);
+	}
+	else
+	{
+		printk("no mapping found for this iova with iova %lu",iova);
+		return;
+	}
+	
+	vpfn->iova = iova;
+	vpfn->pfn = src;
+	vpfn->ref_count = 1; //need to check this
+
+	vfio_unlink_pfn(dma, vpfn);
+	//vfio_iommu_type1_unpin_pages(iommu, iova, 1);
+	vpfn->pfn = dst;
+
+	//the code below has been taken from vfio_iommu_type1_pin_pages and lot has been left so check there for all implemetation
+	//not doing belw dirctly to check if doing it gracously helps
+	//vfio_link_pfn(dma, vpfn);
+	//to check if it aleady mapped and pinned
+	vpfn = vfio_iova_get_vfio_pfn(dma, iova);
+	if(vpfn)
+	{
+		printk("a mapping already exists for this iova with pfn %lu",vpfn->pfn);
+		return;
+	}
+	int ret = vfio_add_to_pfn_list(dma, iova, dst);
+	printk("after updating");
+	//node = rb_first(&iommu->dma_list);
+	//for (; node; node = rb_next(node)) 
+	//	printk("dma: %u",rb_entry(node, struct vfio_dma, node));
+
+	vpfn = vfio_iova_get_vfio_pfn(dma, iova);
+	if(vpfn)
+	{
+		printk("updated mapping for this iova with iova %lu pfn %lu expected dst pfn %lu",iova,vpfn->pfn,dst);
+		return;
+	}
+	if(ret)
+		return;
+
 }
 
 module_init(vfio_iommu_type1_init);
