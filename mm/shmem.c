@@ -1159,7 +1159,8 @@ static void shmem_evict_inode(struct inode *inode)
 {
 	struct shmem_inode_info *info = SHMEM_I(inode);
 	struct shmem_sb_info *sbinfo = SHMEM_SB(inode->i_sb);
-
+	if(custom_printk_flag==get_current()->pid)
+			printk(KERN_INFO "shmem_evict_inode\n");
 	if (shmem_mapping(inode->i_mapping)) {
 		shmem_unacct_size(info->flags, inode->i_size);
 		inode->i_size = 0;

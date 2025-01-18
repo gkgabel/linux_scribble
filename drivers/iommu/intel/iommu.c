@@ -31,6 +31,12 @@
 #include "pasid.h"
 #include "cap_audit.h"
 
+#include <linux/tracepoint.h>
+//The naming scheme “subsys_event” is suggested here as a convention intended to limit collisions. 
+//Tracepoint names are global to the kernel: they are considered as being the same whether they are in the core kernel image or in modules.
+#include <trace/events/migration.h>
+
+
 #define ROOT_SIZE		VTD_PAGE_SIZE
 #define CONTEXT_SIZE		VTD_PAGE_SIZE
 
@@ -1203,6 +1209,7 @@ static void dma_pte_clear_level(struct dmar_domain *domain, int level,
 			   bother to clear them; we're just going to *free* them. */
 			if (level > 1 && !dma_pte_superpage(pte))
 				dma_pte_list_pagetables(domain, level - 1, pte, freelist);
+			trace_iommu_clear_pte(start_pfn, level, dma_pte_addr(pte), "iommu clear pte event");
 
 			dma_clear_pte(pte);
 			if (!first_pte)
@@ -1233,6 +1240,7 @@ static void domain_unmap(struct dmar_domain *domain, unsigned long start_pfn,
 	BUG_ON(!domain_pfn_supported(domain, start_pfn));
 	BUG_ON(!domain_pfn_supported(domain, last_pfn));
 	BUG_ON(start_pfn > last_pfn);
+	trace_iommu_unmap_event(start_pfn, last_pfn, "iommu unmap event");
 
 	/* we don't need lock here; nobody else touches the iova range */
 	dma_pte_clear_level(domain, agaw_to_level(domain->agaw),
@@ -2245,7 +2253,7 @@ __domain_mapping(struct dmar_domain *domain, unsigned long iov_pfn,
 	unsigned long lvl_pages = 0;
 	phys_addr_t pteval;
 	u64 attr;
-
+	trace_iommu_map_event(iov_pfn, phys_pfn, nr_pages, "iommu map event");
 	BUG_ON(!domain_pfn_supported(domain, iov_pfn + nr_pages - 1));
 
 	if ((prot & (DMA_PTE_READ|DMA_PTE_WRITE)) == 0)
@@ -2315,7 +2323,13 @@ __domain_mapping(struct dmar_domain *domain, unsigned long iov_pfn,
 			{
 				pg_owner = (void *)page_ext + page_owner_ops.offset;
         		pg_owner->iov_pfn = iov_pfn;
-			
+				int largepagelevel=0;
+				pg_owner->phys_pfn = pfn_to_dma_pte(domain, iov_pfn,&largepagelevel)->val;
+				pg_owner->phys_pfn = iommu_iova_to_phys(&domain->domain, iov_pfn<<VTD_PAGE_SHIFT);
+				if(to_dmar_domain(&domain->domain)!=domain)
+				{
+					printk("domain->domain.dmar_domain!=domain\n");
+				}
 			}
 		}
 

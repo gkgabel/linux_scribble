@@ -9,6 +9,16 @@
 #include <linux/mm.h>
 #include <linux/delay.h>
 #include "../mm/internal.h"
+#include "../drivers/vfio/vfio.h"
+#include <linux/tracepoint.h>
+
+//The naming scheme “subsys_event” is suggested here as a convention intended to limit collisions. 
+//Tracepoint names are global to the kernel: they are considered as being the same whether they are in the core kernel image or in modules.
+#include <trace/events/migration.h>
+#define CREATE_TRACE_POINTS
+#include <trace/events/migration.h>
+
+int tempctr=0;
 /**
  * UPDATED: OCT 26,2024
  * This file defines a system call to migrate pinned pages and update the IOVA 
@@ -142,9 +152,14 @@ struct dma_pte *find_page_iova_pte(struct page *pg)
 		printk(KERN_INFO "Page is pinned; but DMA device and IOMMU domain NULL");
 		return NULL;
 	}
-	
+	//can we use iommu_iova_to_phys() . no because that is not that something we are looking fr here. we want io pte.
 	dma_pte = find_iova_pte(pg_owner->iov_pfn,pg_owner->dma_device,pg_owner->iommu_domain);
-	printk(KERN_INFO "IOV pfn %lu mapped to phys pfn %lu",pg_owner->iov_pfn,page_to_pfn(pg));
+	gfp_t gfp_mask;
+	int mt;
+	gfp_mask = pg_owner->gfp_mask;
+	mt = gfp_migratetype(gfp_mask);
+	printk(KERN_INFO "IOV pfn %lu mapped to phys pfn %lu migratetype is %s",pg_owner->iov_pfn,page_to_pfn(pg),migratetype_names[mt]);
+	trace_migrate_event(page_to_pfn(pg), "source");
 	//printk("--------dma pte------%llu\n",dma_pte->val);
 	return dma_pte;
 }
@@ -169,7 +184,8 @@ int migrate_and_update_iova_mapping(struct dma_pte *dma_pte,
 #if ENABLE_DEVICE_PAGE_MIGRATION
 	struct intel_iommu *iommu;
 	u8 bus, devfn;
-	u64 clr_access_mask = ~(1ULL << DMA_FL_PTE_ACCESS);
+	//u64 clr_access_mask = ~(1ULL << DMA_FL_PTE_ACCESS); this is wrong because DMA_FL_PTE_ACCESS is already a mask which  has access bit set.
+	u64 clr_access_mask = ~(DMA_FL_PTE_ACCESS)-1;
 	unsigned long dest_pfn_val = page_to_pfn(dst);
 	//Intel IOMMU specific structures
 	struct dma_pte dma_pte_new, dma_pte_access_unset;
@@ -181,15 +197,22 @@ int migrate_and_update_iova_mapping(struct dma_pte *dma_pte,
 	 * Intel IOMMU Specific
 	 * Since PTE contains page addresses that are address aligned to page size,
 	 * the page offset bits VTD_PAGE_SHIFT bits are used for flag; 
-	 * MSB bit apart from mask is some special flag so that is also masked out
 	*/
-	dma_pte_flag = dma_pte->val & VTD_PAGE_MASK & (~DMA_FL_PTE_XD);
+	//MSB bit apart from mask is some special flag so that is also masked out, 
+	//above this line does not make much sense to me so i have removed the mask  (~DMA_FL_PTE_XD)
+	//but this can go very wrong so need to check again
+	dma_pte_flag = dma_pte->val & ~VTD_PAGE_MASK;
 	dma_pte_new.val = dma_pte_flag | (dest_pfn_val << VTD_PAGE_SHIFT);
-	
+	unsigned long src_pfn_from_pte = (dma_pte->val & VTD_PAGE_MASK)>>VTD_PAGE_SHIFT;
+	unsigned long dst_pfn_from_pte = (dma_pte_new.val & VTD_PAGE_MASK)>>VTD_PAGE_SHIFT;
+	printk(KERN_INFO "Source page pfn from pte %lu and dest page pfn from pte %lu",src_pfn_from_pte,dst_pfn_from_pte);
 	/**
-	 * Pinned Page Migration Step 1: clearing access bit for dma pte
+	 * Pinned Page Migration Step 1: clearing access bit for dma pte. shouldn't 
+	 * it be an atomic operator?
 	 */
 	dma_pte->val = dma_pte->val & clr_access_mask;
+	printk(KERN_INFO "clr access mask %llu and dma_pte->val  %llu",clr_access_mask,dma_pte->val);
+
 	//making a copy to compare later
 	dma_pte_access_unset.val = dma_pte->val & clr_access_mask;
 
@@ -206,7 +229,7 @@ int migrate_and_update_iova_mapping(struct dma_pte *dma_pte,
 	 * 
 	 * The else part is for the case when we are using iommu_domain instead of
 	 * dma_device. This is a hack and needs to be fixed. But one advatahe here
-	 * it is IOMMU agnostic.
+	 * it is IOMMU agnostic. This might not be true. Need to check again.
 	 */
 	if(pg_owner->dma_device!=NULL)
 	{
@@ -253,19 +276,25 @@ int migrate_and_update_iova_mapping(struct dma_pte *dma_pte,
 	 * simplicity we assume single mapping. Shoul we do it, won't it be handled
 	 * inside functions.
 	 */
-	printk("Incrementing mapcount and refcount of dst page\n");
-	atomic_inc(&dst->_mapcount);
+	//do i need to do this? why? migration od userspace mappinf already rtakes care of this in my guess
+	//printk("Incrementing mapcount and refcount of dst page\n");
+	//atomic_inc(&dst->_mapcount);
 	//atomic_inc(&dst->_refcount);
 
 #if ENABLE_DEVICE_PAGE_MIGRATION
 	printk(KERN_INFO "Replacing the IO PTE");
+	printk("dma pte val %llu\n",dma_pte->val);
+	printk("before updatingnew pfn from pte %llu\n",(dma_pte->val & VTD_PAGE_MASK)>>VTD_PAGE_SHIFT);
+
+	printk("original phys add before migration %llu and one that we stored %llu\n",iommu_iova_to_phys(pg_owner->iommu_domain,pg_owner->iov_pfn<<VTD_PAGE_SHIFT),pg_owner->phys_pfn);
 	/**
 	 * This needs to be given proper attention, can be source of error
 	 */
+	//a lot of chance this might be wrong
 	if(dma_pte_access_unset.val != 
 		cmpxchg(&(dma_pte->val), dma_pte_access_unset.val, dma_pte_new.val))
 	{
-		page_ref_add(dst, GUP_PIN_COUNTING_BIAS);
+		//page_ref_add(dst, GUP_PIN_COUNTING_BIAS);
 		//atomic_sub(GUP_PIN_COUNTING_BIAS, &dst->_refcount);
 		//atomic_dec(&dst->_mapcount);
 		//atomic_dec(&dst->_refcount);
@@ -274,10 +303,19 @@ int migrate_and_update_iova_mapping(struct dma_pte *dma_pte,
 	else
 	{
 		atomic_sub(GUP_PIN_COUNTING_BIAS, &src->_refcount);
+		page_ref_add(dst, GUP_PIN_COUNTING_BIAS);
 		//atomic_dec(&src->_mapcount);
+	}
+	printk("dma pte val %llu\n",dma_pte->val);
+	printk("after updatingnew pfn from pte %llu\n",(dma_pte->val & VTD_PAGE_MASK)>>VTD_PAGE_SHIFT);
+	if(find_page_iova_pte(src))
+	{
+		printk(KERN_WARNING "Source page still has IOVA PTE with dest page %llu\n",iommu_iova_to_phys(pg_owner->iommu_domain,pg_owner->iov_pfn<<VTD_PAGE_SHIFT));
 	}
 	printk(KERN_INFO "IOV pfn %lu remapped to phys pfn %lu in device %lu but only in IO page table",
 			pg_owner->iov_pfn,page_to_pfn(dst),(unsigned long)pg_owner->dma_device);
+	trace_migrate_event(page_to_pfn(dst), "destination");
+
 	return 0;
 #else
 	return 0;
@@ -349,12 +387,24 @@ void copy_mapping(struct address_space *mapping, struct folio *fdst,
 	 */
 	/*
 	folio_ref_unfreeze(page_folio(dst), expected_count - nr);
+	*/
 	xas_unlock(&xas);
 	local_irq_enable();
-	*/
+	
 		
 	//folio_ref_add(fdst, nr); /* add cache reference */
+	/*Also update in vfio_iommu_type1 driver*/
+	struct page_owner *pg_owner;
+	if(is_page_pinned(folio_page(fsrc,0),&pg_owner)>0)
+	{
+		struct vfio_iommu *iommu;
+		dma_addr_t iova;
 
+		iommu= pg_owner->vfio_iommu;
+		iova = pg_owner->iov_pfn << VTD_PAGE_SHIFT;
+		
+		vfio_change_mapping(iommu,iova,page_to_pfn(folio_page(fsrc,0)),page_to_pfn(folio_page(fdst,0)));
+	}
 }
 
 /**
@@ -387,6 +437,8 @@ int migrate_arbitrary(struct page *src, struct page *dst, pte_t *pte)
 				page_to_pfn(src));
 		return 1;
 	}
+	printk(KERN_INFO "PFN %lu: Pinned page found with DMA Pte %lu\n",
+				page_to_pfn(src),dma_pte->val);
 
 	/**
 	 * folio_mapping(page_folio(src)) does not give the mapping of the page that
@@ -423,7 +475,6 @@ int migrate_arbitrary(struct page *src, struct page *dst, pte_t *pte)
 	print_page_info(dst,"Destination Page, Freshly allocated");
 	*/
 	copy_mapping(mapping,page_folio(dst),page_folio(src));
-
 	if(page_folio(dst)->mapping != page_folio(src)->mapping)
 	{
 		printk(KERN_WARNING "Source and Destination folio mapppings don't match");
@@ -433,6 +484,9 @@ int migrate_arbitrary(struct page *src, struct page *dst, pte_t *pte)
 	 * It is important to hold a reference to both src and dst page before 
 	 * starting the migration.
 	 */
+	print_page_info(src,"Source Page: Before blocking user access and changing ref count:");
+	//the above fact dpes not seem to be true cpmpletely. Need to check again.Probably
+	//won't need to hold a reference for destination also source if it is pinned already
 	atomic_inc(&dst->_refcount);
 	atomic_inc(&src->_refcount);
 
@@ -527,6 +581,14 @@ int migrate_arbitrary(struct page *src, struct page *dst, pte_t *pte)
 		put_page(src);
 		put_page(dst);
 
+		//this is weird because page ownewr should bw cleared with free pages but we are not doing thsat
+		reset_page_owner(dst, 0);
+		//we are fqcing issue that folio is still mapped to user space. So, let us check if it somehingfrom oue side casuing the poblem
+		if(folio_mapped(page_folio(dst)))
+		{
+			printk(KERN_WARNING "Destination page is still mapped to user space\n");
+		}
+
 		print_page_info(src,"Source Page: After migration failure:");
 		print_page_info(dst,"Destination Page: After migration failure:");
 		
@@ -557,6 +619,16 @@ int migrate_arbitrary(struct page *src, struct page *dst, pte_t *pte)
 	put_page(src);
 	put_page(dst);
 	put_page(src);
+	//this is weird because page ownewr should bw cleared with free pages but we are not doing thsat
+	reset_page_owner(src, 0);
+	//we are fqcing issue that folio is still mapped to user space. So, let us check if it somehingfrom oue side casuing the poblem
+	if(folio_mapped(page_folio(src)))
+	{
+		printk(KERN_WARNING "source page is still mapped to user space\n");
+		tempctr++;
+	}
+
+
 	//atomic_dec(&src->_refcount);
 	print_page_info(src,"Source Page: After migration success:");
 	print_page_info(dst,"Destination Page: After migration success:");
@@ -708,8 +780,8 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 			}	
 		}
 	}
-	printk(KERN_INFO "Number of Total & Successful & Aborted Attempts= %lu %lu %lu %lu\n",
-			success+abort,success,abort,mismatch);
+	printk(KERN_INFO "Number of Total & Successful & Aborted Attempts &tempctr= %lu %lu %lu %lu %lu\n",
+			success+abort,success,abort,mismatch,tempctr);
 	custom_printk_flag = pid;
 	return 0;
 }

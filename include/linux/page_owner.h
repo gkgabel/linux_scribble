@@ -21,7 +21,10 @@ struct page_owner {
 	int flag_gup;
 	struct device *dma_device;
 	struct iommu_domain *iommu_domain;
+	struct vfio_iommu *vfio_iommu;
+	struct vfio_iommu_driver_ops *driver_ops; //not needed probablty, remove it please
 	unsigned long iov_pfn;
+	unsigned long phys_pfn;
 };
 
 extern void __reset_page_owner(struct page *page, unsigned short order);

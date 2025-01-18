@@ -69,3 +69,11 @@ struct vfio_iommu_driver_ops {
 
 int vfio_register_iommu_driver(const struct vfio_iommu_driver_ops *ops);
 void vfio_unregister_iommu_driver(const struct vfio_iommu_driver_ops *ops);
+
+/**
+ * Adding a function to change mapping in vfio iommu type1 driver after page changes 
+ * Needs a proper name and a lot of changes. it is a workaround since we cannpt access 
+ * driver functions without using the hooks provided. And hoks need iommu_group which 
+ * I donot know how to find
+*/
+void vfio_change_mapping(struct vfio_iommu *iommu,dma_addr_t iova, unsigned long src, unsigned long dst);
