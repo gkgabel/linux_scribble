@@ -2164,7 +2164,7 @@ static long __gup_longterm_locked(struct mm_struct *mm,
 {
 	unsigned int flags;
 	long rc;
-	printk(" __gup_longterm_locked\n");
+	//printk(" __gup_longterm_locked\n");
 	if (!(gup_flags & FOLL_LONGTERM))
 		return __get_user_pages_locked(mm, start, nr_pages, pages, vmas,
 					       NULL, gup_flags);
@@ -3351,7 +3351,7 @@ long pin_user_pages_remote(struct mm_struct *mm,
 			   unsigned int gup_flags, struct page **pages,
 			   struct vm_area_struct **vmas, int *locked)
 {
-	printk("pin_user_pages_remote\n");
+	//printk("pin_user_pages_remote\n");
 	/* FOLL_GET and FOLL_PIN are mutually exclusive. */
 	if (WARN_ON_ONCE(gup_flags & FOLL_GET))
 		return -EINVAL;

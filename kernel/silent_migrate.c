@@ -666,8 +666,8 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 	}
 
 	//this flag is for pid conditoned printk debugging at places in kernel
-	custom_printk_flag= get_current()->pid;
-
+	//custom_printk_flag= get_current()->pid;
+	unsigned long page_counter=0;
 	for(vmi = mm->mmap; vmi != NULL ; vmi = vmi->vm_next)
 	{	
 		unsigned long vpage; //temp variable for iterating over each virtual page in vma
@@ -737,8 +737,8 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 				//printk(KERN_INFO "Skipping a unpinned page\n");
 				continue;
 			}
-			
-			//printk(KERN_INFO "pte = %lu\n", pte->pte);
+			page_counter++;
+			printk(KERN_INFO "page counter = %lu\n", page_counter);
 			//printk(KERN_INFO "It is a pinned page\n");
 			
 #endif
@@ -782,6 +782,6 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 	}
 	printk(KERN_INFO "Number of Total & Successful & Aborted Attempts &tempctr= %lu %lu %lu %lu %lu\n",
 			success+abort,success,abort,mismatch,tempctr);
-	custom_printk_flag = pid;
+	//custom_printk_flag = pid;
 	return 0;
 }

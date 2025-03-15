@@ -3349,7 +3349,8 @@ static struct vfio_dma *vfio_find_dma_dup(struct vfio_iommu *iommu,
 
 	while (node) {
 		struct vfio_dma *dma = rb_entry(node, struct vfio_dma, node);
-		printk("dma iova: %u dma size %u start %u",dma->iova,dma->size,start);
+		//this is called many times
+		//printk("dma iova: %u dma size %u start %u",dma->iova,dma->size,start);
 		if (start + size <= dma->iova)
 			node = node->rb_left;
 		else if (start >= dma->iova + dma->size)
