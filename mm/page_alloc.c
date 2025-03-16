@@ -3764,7 +3764,7 @@ struct page *__rmqueue_pcplist(struct zone *zone, unsigned int order,
 			if (batch > 1)
 				batch = max(batch >> order, 2);
 			if(custom_printk_flag==get_current()->pid)
-			printk(KERN_INFO "page_alloc.c:line 3767");
+				printk(KERN_INFO "page_alloc.c:line 3767");
 			alloced = rmqueue_bulk(zone, order,
 					batch, list,
 					migratetype, alloc_flags);

@@ -766,6 +766,8 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 
 	mtc.nid = NUMA_NO_NODE;
 	mtc.gfp_mask = GFP_HIGHUSER_MOVABLE;
+	//got a kernel panic du to below. because did not set nmask
+	mtc.nmask = NULL;
 	dst = alloc_migration_target(src, (unsigned long)&mtc);
 	
 	print_page_info(dst,"Destination Page, Freshly allocated");
