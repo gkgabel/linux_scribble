@@ -646,13 +646,16 @@ int migrate_arbitrary(struct page *src, struct page *dst, pte_t *pte)
 
 /**
  * System call to migrate pinned pages of a process.
+ * Update: 12 April 25: Added two new parameters to migrate from a given address
+ * range
  */
-SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
+SYSCALL_DEFINE3(silent_migrate,pid_t,pid,void __user *,ptr,unsigned long,len)
 {
 	struct mm_struct *mm; //mm_struct of pid whose pages are to be migrated
 	struct vm_area_struct *vmi; //iterator for VMA
 	unsigned long abort = 0, success = 0, mismatch = 0; //stats counters 
-
+	//Should we use copy from user here??? Since we are not going to actually 
+	//going to dereference the pointer, can we use it directly??
 	if(pid == -1)
 		mm = current->mm;
 	else
@@ -661,6 +664,24 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 		if(mm==NULL)
 		{
 			printk(KERN_ERR "mm struct for process is NULL\n");
+			return -1;
+		}
+	}
+
+	if(ptr==NULL)
+	{
+		printk(KERN_ERR "Pointer is NULL,migrating all pages of process\n");
+	}
+	else
+	{
+		printk(KERN_ERR "Pointer is not NULL, migrating pages from addresss %s",
+			"%p to %p\n",ptr,ptr+len);
+		printk(KERN_INFO "Length is %lu AND Pointer is %lu\n",len,ptr);
+		ptr =(unsigned long) (((unsigned long)ptr << PAGE_SHIFT)>> PAGE_SHIFT);
+		printk(KERN_INFO "Pointer belongs to vpage %lu\n",ptr);
+		if(len<=0)
+		{
+			printk(KERN_ERR "Length is less than or equal to 0, returning\n");
 			return -1;
 		}
 	}
@@ -693,6 +714,17 @@ SYSCALL_DEFINE1(silent_migrate,pid_t,pid)
 		for( vpage = vmi->vm_start ; vpage < vmi->vm_end ; vpage += 4096 )
 		{	
 			//char *vaddr_src, *vaddr_dst;
+			if(ptr!=NULL)
+			{
+				if(vpage == ptr)
+					printk(KERN_INFO "The supplied vpage exists %lu\n",vpage);
+				else 
+				if(vpage > ptr && vpage < (ptr+len))
+					printk(KERN_INFO "The supplied vpage exists %lu\n",vpage);
+				else
+					continue;
+				
+			}
 			pte_t *pte, temp_pte_val;
 			struct page *src;
 			struct page_owner *pg_owner;
