@@ -119,11 +119,11 @@ int is_page_pinned(struct page *pg,struct page_owner **pg_owner)
 		return -1;
 	
 	temp = (void *)page_ext + page_owner_ops.offset;
-
+	*pg_owner=temp;
 	if(temp->flag_gup == 0)
 		return 0;
 
-	*pg_owner=temp;
+	
 	return 1;
 }
 
@@ -134,21 +134,12 @@ int copy_metadata(struct page *src, struct page *dst)
 	int ret=0;
 
 	ret = is_page_pinned(src,&pg_owner_src);
-	if(ret<=0)
-	{
-		printk(KERN_WARNING "Source page is not pinned\n");
-		return -1;
-	}
 	ret = is_page_pinned(dst,&pg_owner_dst);
-	if(ret<=0)
-	{
-		printk(KERN_WARNING "Destination page is not pinned\n");
-		return -1;
-	}
+
 
 	pg_owner_dst->dma_device = pg_owner_src->dma_device;
 	pg_owner_dst->iommu_domain = pg_owner_src->iommu_domain;
-	pg_owner_dst->flag_gup = pg_owner_src->flag_gup;
+	pg_owner_dst->flag_gup = 1;
 	pg_owner_dst->phys_pfn = pg_owner_src->phys_pfn;
 	pg_owner_dst->vfio_iommu = pg_owner_src->vfio_iommu;
 	pg_owner_dst->iov_pfn = pg_owner_src->iov_pfn;
@@ -835,6 +826,7 @@ SYSCALL_DEFINE3(silent_migrate,pid_t,pid,void __user *,ptr,unsigned long,len)
 	
 			if(!migrate_arbitrary(src,dst,pte))
 			{
+				copy_metadata(src,dst);
 				success++;
 			}
 			else
